@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+bower_components/
+
+# Build outputs
+dist/
+build/
+out/
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Package manager files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
