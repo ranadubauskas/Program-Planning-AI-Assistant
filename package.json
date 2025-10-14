@@ -1,0 +1,33 @@
+{
+  "name": "program-planning-assistant",
+  "version": "1.0.0",
+  "description": "AI-powered program planning assistant for Vanderbilt University",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "backend:dev": "cd backend && npm run dev",
+    "frontend:dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build && cd ../backend && npm run build",
+    "test": "cd backend && npm test && cd ../frontend && npm test",
+    "lint": "cd backend && npm run lint && cd ../frontend && npm run lint",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "seed": "cd database && node seed.js",
+    "setup": "npm run install:all && npm run seed"
+  },
+  "keywords": [
+    "ai",
+    "program-planning",
+    "vanderbilt",
+    "assistant"
+  ],
+  "author": "ranadubauskas",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "mongoose": "^8.19.1"
+  }
+}
