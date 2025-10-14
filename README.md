@@ -9,9 +9,16 @@ Rana Dubauskas & Blanche Stora
 EJ Edney
 
 ## PRD
-
+[Link](.PRD.docx)
 
 ## Features
+
+
+<img width="364" height="343" alt="Screenshot 2025-10-14 at 1 36 41 PM" src="https://github.com/user-attachments/assets/06bd51db-60bf-403b-8bee-c8c43ebe1cf7" />
+<img width="891" height="422" alt="Screenshot 2025-10-14 at 1 36 26 PM" src="https://github.com/user-attachments/assets/4c7eba49-f585-43bf-932d-3e70a550a006" />
+<img width="1057" height="801" alt="Screenshot 2025-10-14 at 1 36 13 PM" src="https://github.com/user-attachments/assets/8f373997-97ad-4a86-9f25-1674b067a147" />
+
+
 
 - **AI-Powered Chat Interface**: Get personalized guidance for program planning
 - **Interactive Checklists**: Track your progress with automatically generated task lists
@@ -44,27 +51,19 @@ EJ Edney
    ```
 
 2. **Set up environment variables**:
-# backend/.env
+   
+**backend/.env**
+ ```bash
 PORT=3001
-
-# Mongo — use 127.0.0.1 (avoids IPv6 ::1 issues)
 DATABASE_URL=mongodb://127.0.0.1:27017/program-planning
 
-# Amplify — /chat endpoint, Bearer auth, and required payload shape
 USE_AMPLIFY=true
 AMPLIFY_BASE_URL=https://prod-api.vanderbilt.ai
 AMPLIFY_AUTH_SCHEME=bearer
 AMPLIFY_API_KEY=<YOUR_REAL_AMPLIFY_KEY>
 AMPLIFY_MODEL=gpt-4o-mini
-# Optional: if your gateway uses a stage path (e.g., /prod/chat)
-# AMPLIFY_PATH=/prod/chat
-
-# JWT
 JWT_SECRET=<generate-a-strong-random-string>
-   The `.env` file is already configured with:
-   - Amplify AI API credentials
-   - Database connection string
-   - Port configurations
+ ```
 
 **How to generate JWT_SECRET:**
 ```bash
