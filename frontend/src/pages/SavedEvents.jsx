@@ -52,6 +52,35 @@ const SavedEvents = ({ user }) => {
     }
   };
 
+  const toggleChecklistItem = async (itemIndex) => {
+    if (!selectedEvent) return;
+
+    try {
+      // Create updated checklist with toggled item
+      const updatedChecklist = selectedEvent.checklist.map((item, index) => 
+        index === itemIndex ? { ...item, completed: !item.completed } : item
+      );
+
+      // Update the event with the new checklist
+      const response = await axios.put(`/api/events/${selectedEvent._id}`, {
+        ...selectedEvent,
+        checklist: updatedChecklist
+      });
+
+      // Update local state
+      const updatedEvent = response.data;
+      setSelectedEvent(updatedEvent);
+      
+      // Update the events list
+      setEvents(events.map(event => 
+        event._id === updatedEvent._id ? updatedEvent : event
+      ));
+
+    } catch (error) {
+      console.error('Failed to update checklist item:', error);
+    }
+  };
+
   const formatDate = (date) => {
     return date ? new Date(date).toLocaleDateString() : 'No date set';
   };
@@ -190,18 +219,27 @@ const SavedEvents = ({ user }) => {
                   </h2>
                   <div className="space-y-3">
                     {selectedEvent.checklist.map((item, index) => (
-                      <div key={index} className="flex items-start space-x-3">
+                      <div 
+                        key={index} 
+                        className="flex items-start space-x-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                        onClick={() => toggleChecklistItem(index)}
+                      >
                         <CheckCircleIconSolid 
-                          className={`h-5 w-5 mt-0.5 flex-shrink-0 ${
-                            item.completed ? 'text-green-600' : 'text-gray-300'
+                          className={`h-5 w-5 mt-0.5 flex-shrink-0 transition-colors ${
+                            item.completed ? 'text-green-600 hover:text-green-700' : 'text-gray-300 hover:text-gray-400'
                           }`} 
                         />
                         <div className="flex-1">
-                          <p className={`${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                          <p className={`transition-all ${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
                             {item.task}
                           </p>
                           {item.description && (
                             <p className="text-sm text-gray-500 mt-1">{item.description}</p>
+                          )}
+                          {item.dueDate && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              Due: {new Date(item.dueDate).toLocaleDateString()}
+                            </p>
                           )}
                         </div>
                       </div>
