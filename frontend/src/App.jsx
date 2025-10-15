@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Chat from './pages/Chat';
 import PlanDetails from './pages/PlanDetails';
+import SavedEvents from './pages/SavedEvents';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -75,6 +76,18 @@ function App() {
             path="/plan/:planId" 
             element={
               user ? <PlanDetails user={user} /> : <Navigate to="/login" />
+            } 
+          />
+          <Route 
+            path="/events" 
+            element={
+              user ? <SavedEvents user={user} /> : <Navigate to="/login" />
+            } 
+          />
+          <Route 
+            path="/events/:eventId" 
+            element={
+              user ? <SavedEvents user={user} /> : <Navigate to="/login" />
             } 
           />
           <Route 

@@ -34,6 +34,7 @@ export const CONFIG = {
   AMPLIFY_BASE_URL: (process.env.AMPLIFY_BASE_URL || '').trim().replace(/\/+$/, ''),
   AMPLIFY_API_KEY: (process.env.AMPLIFY_API_KEY || '').trim(),
   AMPLIFY_MODEL: (process.env.AMPLIFY_MODEL || 'gpt-4o-mini').trim(),
+  AMPLIFY_PATH: (process.env.AMPLIFY_PATH || '').trim().replace(/\/+$/, ''),
 
   // ONE definition only:
   AMPLIFY_AUTH_SCHEME: trimLower(process.env.AMPLIFY_AUTH_SCHEME, 'bearer'),

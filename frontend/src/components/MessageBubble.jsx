@@ -1,9 +1,41 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { BookmarkIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon as BookmarkIconSolid } from '@heroicons/react/24/solid';
 
-export default function MessageBubble({ role, content, timestamp }) {
+export default function MessageBubble({ role, content, timestamp, onSaveEvent, user, planId }) {
   const isUser = role === 'user';
+  const [isSaved, setIsSaved] = useState(false);
+
+  // Check if message contains event-like content
+  const containsEventContent = !isUser && content && (
+    content.toLowerCase().includes('deadline') ||
+    content.toLowerCase().includes('due date') ||
+    content.toLowerCase().includes('schedule') ||
+    content.toLowerCase().includes('meeting') ||
+    content.toLowerCase().includes('event') ||
+    content.toLowerCase().includes('task') ||
+    content.toLowerCase().includes('checklist') ||
+    content.toLowerCase().includes('timeline') ||
+    /\d{1,2}\/\d{1,2}\/\d{4}/.test(content) || // Date pattern
+    /\d{1,2}-\d{1,2}-\d{4}/.test(content) ||
+    content.includes('by ') && (content.includes('date') || content.includes('time'))
+  );
+
+  // Show save button for messages with event-like content
+  const showSaveButton = containsEventContent && onSaveEvent;
+
+  const handleSaveEvent = async () => {
+    if (onSaveEvent && !isSaved) {
+      try {
+        await onSaveEvent(content, timestamp, planId);
+        setIsSaved(true);
+      } catch (error) {
+        console.error('Failed to save event:', error);
+      }
+    }
+  };
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -27,12 +59,34 @@ export default function MessageBubble({ role, content, timestamp }) {
           </ReactMarkdown>
         </div>
 
-        {/* Timestamp (separate line, not concatenated) */}
-        {timestamp && (
-          <div className={`text-xs mt-2 ${isUser ? 'text-yellow-100' : 'text-gray-500'} text-right`}>
-            {new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-          </div>
-        )}
+        {/* Timestamp and Save Button */}
+        <div className="flex items-center justify-between mt-2">
+          {timestamp && (
+            <div className={`text-xs ${isUser ? 'text-yellow-100' : 'text-gray-500'}`}>
+              {new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </div>
+          )}
+          
+          {/* Save Event Button */}
+          {showSaveButton && (
+            <button
+              onClick={handleSaveEvent}
+              disabled={isSaved}
+              className={`ml-2 px-3 py-1 text-sm rounded-md border transition-colors ${
+                isSaved
+                  ? 'bg-green-100 text-green-800 border-green-300 cursor-not-allowed'
+                  : 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-200'
+              }`}
+              title={isSaved ? 'Event saved' : 'Save as event'}
+            >
+              {isSaved ? (
+                <span>✓ Saved</span>
+              ) : (
+                <span>📑 Save Event</span>
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
