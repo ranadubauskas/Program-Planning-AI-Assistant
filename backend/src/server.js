@@ -5,7 +5,7 @@ import morgan from 'morgan';
 import mongoose from 'mongoose';
 import { connectDB } from './db.js'; 
 import { chatWithAmplify } from './amplifyClient.js';
-import { User, ProgramPlan, Policy } from './models.js';
+import { User, ProgramPlan, Policy, Event } from './models.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -98,6 +98,63 @@ app.get('/api/policies', async (req, res) => {
   try {
     const policies = await Policy.find();
     res.json(policies);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Events API
+app.get('/api/events', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const events = await Event.find({ userId }).populate('planId', 'title');
+    res.json(events);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/events', async (req, res) => {
+  try {
+    const event = new Event(req.body);
+    await event.save();
+    res.json(event);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/events/:id', async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id).populate('planId', 'title');
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    res.json(event);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/events/:id', async (req, res) => {
+  try {
+    const event = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    res.json(event);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/events/:id', async (req, res) => {
+  try {
+    const event = await Event.findByIdAndDelete(req.params.id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    res.json({ message: 'Event deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

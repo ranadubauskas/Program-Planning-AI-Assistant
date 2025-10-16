@@ -110,6 +110,58 @@ PolicySchema.pre('validate', function () {
 PolicySchema.index({ category: 1, roleVisibility: 1 });
 PolicySchema.index({ title: 'text', description: 'text', category: 'text', tags: 'text' });
 
+// Event schema for saved events from chat
+const EventSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  planId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProgramPlan' },
+  title: { type: String, required: true },
+  description: { type: String },
+  eventDate: { type: Date },
+  category: { type: String, enum: ['meeting', 'deadline', 'task', 'milestone', 'other'], default: 'other' },
+  priority: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
+  status: { type: String, enum: ['pending', 'in-progress', 'completed', 'cancelled'], default: 'pending' },
+  
+  // Enhanced checklist with timeline
+  checklist: [{
+    task: { type: String, required: true },
+    description: String,
+    dueDate: Date,
+    priority: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
+    completed: { type: Boolean, default: false },
+    completedAt: Date,
+    estimatedHours: Number,
+    category: String,
+    dependencies: [String] // References to other tasks
+  }],
+  
+  // Timeline milestones
+  timeline: [{
+    milestone: { type: String, required: true },
+    dueDate: Date,
+    completed: { type: Boolean, default: false },
+    completedAt: Date,
+    description: String,
+    associatedTasks: [String] // References to checklist items
+  }],
+  
+  // Original chat context
+  sourceMessage: {
+    content: String,
+    timestamp: Date,
+    conversationContext: [String] // Array of related message contents
+  },
+  
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+// Update the updatedAt field on save
+EventSchema.pre('save', function(next) {
+  this.updatedAt = new Date();
+  next();
+});
+
 export const User = mongoose.model('User', UserSchema);
 export const ProgramPlan = mongoose.model('ProgramPlan', ProgramPlanSchema);
 export const Policy = mongoose.model('Policy', PolicySchema);
+export const Event = mongoose.model('Event', EventSchema);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { UserIcon, ChatBubbleLeftRightIcon, HomeIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
+import { UserIcon, ChatBubbleLeftRightIcon, HomeIcon, ArrowRightOnRectangleIcon, BookmarkIcon } from '@heroicons/react/24/outline';
 
 const Header = ({ user, onLogout }) => {
   const location = useLocation();
@@ -8,6 +8,7 @@ const Header = ({ user, onLogout }) => {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
     { name: 'AI Assistant', href: '/chat', icon: ChatBubbleLeftRightIcon },
+    { name: 'Saved Events', href: '/events', icon: BookmarkIcon },
   ];
 
   return (

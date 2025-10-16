@@ -1,22 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { PlusIcon, ChatBubbleLeftRightIcon, CalendarIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ChatBubbleLeftRightIcon, CalendarIcon, ClipboardDocumentListIcon, BookmarkIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
 const Dashboard = ({ user }) => {
   const [plans, setPlans] = useState([]);
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchPlans();
+    fetchData();
   }, [user]);
 
-  const fetchPlans = async () => {
+  const fetchData = async () => {
     try {
-      const response = await axios.get(`/api/plans?userId=${user._id}`);
-      setPlans(response.data);
+      const [plansResponse, eventsResponse] = await Promise.all([
+        axios.get(`/api/plans?userId=${user._id}`),
+        axios.get(`/api/events?userId=${user._id}`)
+      ]);
+      setPlans(plansResponse.data);
+      setEvents(eventsResponse.data);
     } catch (error) {
-      console.error('Error fetching plans:', error);
+      console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
@@ -31,6 +36,20 @@ const Dashboard = ({ user }) => {
       case 'cancelled': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const getPriorityColor = (priority) => {
+    switch (priority) {
+      case 'critical': return 'bg-red-100 text-red-800';
+      case 'high': return 'bg-orange-100 text-orange-800';
+      case 'medium': return 'bg-blue-100 text-blue-800';
+      case 'low': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const formatDate = (date) => {
+    return date ? new Date(date).toLocaleDateString() : 'No date';
   };
 
   if (loading) {
@@ -111,15 +130,15 @@ const Dashboard = ({ user }) => {
             <div className="p-5">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <PlusIcon className="h-6 w-6 text-gray-400" />
+                  <BookmarkIcon className="h-6 w-6 text-gray-400" />
                 </div>
                 <div className="ml-5 w-0 flex-1">
                   <dl>
                     <dt className="text-sm font-medium text-gray-500 truncate">
-                      Completed
+                      Saved Events
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {plans.filter(p => p.status === 'completed').length}
+                      {events.length}
                     </dd>
                   </dl>
                 </div>
@@ -132,19 +151,19 @@ const Dashboard = ({ user }) => {
         <div className="bg-white shadow overflow-hidden sm:rounded-md">
           <div className="px-4 py-5 sm:px-6">
             <h2 className="text-lg leading-6 font-medium text-gray-900">
-              Your Program Plans
+              Your Program Plans & Events
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Manage your current and past program planning projects
+              Manage your program plans and saved events from chat conversations
             </p>
           </div>
           
-          {plans.length === 0 ? (
+          {plans.length === 0 && events.length === 0 ? (
             <div className="text-center py-12">
               <ChatBubbleLeftRightIcon className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No plans yet</h3>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No plans or events yet</h3>
               <p className="mt-1 text-sm text-gray-500">
-                Get started by creating your first program plan with our AI assistant.
+                Get started by creating your first program plan or save events from chat conversations.
               </p>
               <div className="mt-6">
                 <Link
@@ -157,38 +176,91 @@ const Dashboard = ({ user }) => {
               </div>
             </div>
           ) : (
-            <ul className="divide-y divide-gray-200">
-              {plans.map((plan) => (
-                <li key={plan._id}>
-                  <Link
-                    to={`/plan/${plan._id}`}
-                    className="block hover:bg-gray-50 px-4 py-4 sm:px-6"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-indigo-600 truncate">
-                            {plan.title}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {plan.programType} • {plan.location?.type}
-                            {plan.hasAlcohol && ' • Alcohol'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(plan.status)}`}>
-                          {plan.status}
-                        </span>
-                        <div className="text-sm text-gray-500">
-                          {plan.timeline?.eventDate && new Date(plan.timeline.eventDate).toLocaleDateString()}
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-6">
+              {/* Program Plans Section */}
+              {plans.length > 0 && (
+                <div>
+                  <h3 className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-50 border-b">
+                    Program Plans ({plans.length})
+                  </h3>
+                  <ul className="divide-y divide-gray-200">
+                    {plans.map((plan) => (
+                      <li key={`plan-${plan._id}`}>
+                        <Link
+                          to={`/plan/${plan._id}`}
+                          className="block hover:bg-gray-50 px-4 py-4 sm:px-6"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center">
+                              <ClipboardDocumentListIcon className="h-5 w-5 text-gray-400 mr-3" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-indigo-600 truncate">
+                                  {plan.title}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  {plan.programType} • {plan.location?.type}
+                                  {plan.hasAlcohol && ' • Alcohol'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(plan.status)}`}>
+                                {plan.status}
+                              </span>
+                              <div className="text-sm text-gray-500">
+                                {plan.timeline?.eventDate && new Date(plan.timeline.eventDate).toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Saved Events Section */}
+              {events.length > 0 && (
+                <div>
+                  <h3 className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-50 border-b">
+                    Saved Events ({events.length})
+                  </h3>
+                  <ul className="divide-y divide-gray-200">
+                    {events.map((event) => (
+                      <li key={`event-${event._id}`}>
+                        <Link
+                          to={`/events/${event._id}`}
+                          className="block hover:bg-gray-50 px-4 py-4 sm:px-6"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center">
+                              <BookmarkIcon className="h-5 w-5 text-gray-400 mr-3" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-blue-600 truncate">
+                                  {event.title}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  {event.category} • {event.checklist?.length || 0} tasks
+                                  {event.eventDate && ` • ${formatDate(event.eventDate)}`}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(event.priority)}`}>
+                                {event.priority}
+                              </span>
+                              <div className="text-sm text-gray-500">
+                                {event.checklist?.filter(t => t.completed).length || 0}/{event.checklist?.length || 0}
+                              </div>
+                            </div>
+                          </div>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
