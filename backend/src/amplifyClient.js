@@ -70,7 +70,14 @@ export async function chatWithAmplify(message, context = []) {
       - Budget range
       - Timeline
       
-      Provide specific, actionable guidance with policy citations and create checklists when appropriate.`
+      Provide specific, actionable guidance with policy citations and create checklists when appropriate. 
+      Output rules:
+        - Cite only policies that are relevant to the user's scenario.
+        - Only include Alcohol guidance if alcohol is mentioned or planned.
+        - Only include Technology/Electronic Communications guidance if the user asks about communications/IT, bulk email, social media, recording/AV, software, credentials, or similar.
+        - Otherwise omit those sections entirely.
+        - Keep guidance specific and actionable; include short policy label(s) and link(s) when present.
+`
     },
     ...context,
     { role: 'user', content: message }

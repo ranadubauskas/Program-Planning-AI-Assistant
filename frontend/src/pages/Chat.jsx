@@ -27,6 +27,7 @@ To get started, tell me about the program you're planning:
 1. **Event Type:** What type of event? (mixer, concert, workshop, lecture, etc.)
 2. **Location:** Will it be on-campus or off-campus?
 3. **Alcohol:** Will alcohol be involved?
+4. **Technology:** Do you plan to email communications & will you require AV support or Wifi?
 4. **Expected Attendance:** How many people do you expect to attend?
 5. **Target Date:** When are you planning to hold it?
 

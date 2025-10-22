@@ -2,13 +2,13 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
-import mongoose from 'mongoose';
 import { connectDB } from './db.js'; 
 import { chatWithAmplify } from './amplifyClient.js';
 import { User, ProgramPlan, Policy, Event } from './models.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
 
 // Connect to MongoDB
 await connectDB(process.env.DATABASE_URL || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/program-planning');
@@ -69,29 +69,136 @@ app.get('/api/plans/:id', async (req, res) => {
   }
 });
 
+const MSG_RE = {
+  alcohol: /\b(alcohol|beer|wine|bartend|wet\s*event|id\s*check|21\+)\b/i,
+  tech: /\b(email(s)?|bulk\s*email|mass\s*email|listserv|mailchimp|social\s*media|wifi|wi-?fi|it\s|cyber|malware|password|credential|record(ing)?|av\b|software|download|install|BYOD|device|HIPAA|FERPA)\b/i,
+  minors: /\b(minor(s)?|under\s*18|youth|camp|K-?12|child|children)\b/i,
+};
+
+function isAlcoholRelevant({ message, plan }) {
+  return Boolean(MSG_RE.alcohol.test(message || '') || (plan && plan.hasAlcohol));
+}
+function isTechRelevant({ message }) {
+  return Boolean(MSG_RE.tech.test(message || ''));
+}
+function isMinorsRelevant({ message }) {
+  return Boolean(MSG_RE.minors.test(message || ''));
+}
+
+async function buildPolicyContext({ user, plan, message }) {
+  // Load all policies once, filter in-memory (small set). If you prefer, query by category.
+  const all = await Policy.find().lean();
+
+  const programType = plan?.programType || 'other';
+  const role = (user?.role || 'both').toLowerCase(); // 'student' | 'staff' | 'both'
+  const campus = plan?.location?.type || 'on-campus';
+
+  // Base “always relevant” buckets
+  const want = [];
+
+  // Space booking (usually relevant for on-campus)
+  if (campus === 'on-campus') {
+    want.push('Use of Space', 'Space Booking'); // support either label
+  }
+
+  // Marketing/Comms
+  want.push('Marketing and Communications', 'Marketing');
+
+  // Alcohol
+  if (isAlcoholRelevant({ message, plan })) {
+    want.push('Alcohol Policy', 'Alcohol');
+  }
+
+  // Technology / Electronic Communications (only if relevant)
+  if (isTechRelevant({ message })) {
+    want.push('Technology', 'Electronic Communications');
+  }
+
+  // Protection of minors (only if relevant)
+  if (isMinorsRelevant({ message })) {
+    want.push('Protection of Minors');
+  }
+
+  // Filter by wanted categories + role + program type
+  const relevant = all.filter(p => {
+    const catOk = want.some(w => p.category?.toLowerCase().includes(w.toLowerCase()));
+    if (!catOk) return false;
+
+    const roleOk =
+      (p.roleVisibility || 'both') === 'both' ||
+      (p.roleVisibility || 'both') === role;
+
+    const typeOk =
+      !p.programTypes?.length || p.programTypes.includes(programType);
+
+    return roleOk && typeOk;
+  });
+
+  if (!relevant.length) return '';
+
+  // Short, bounded context string (kept under ~1–2k tokens)
+  const lines = [];
+  lines.push('POLICY CONTEXT (concise):');
+  for (const p of relevant.slice(0, 12)) { // cap to avoid overlong prompts
+    const reqs = (p.requirements || []).slice(0, 6).map(r => `• ${r}`);
+    const cites = (p.citations || []).slice(0, 2).map(u => `(${u})`).join(' ');
+    lines.push(
+      `- ${p.category}: ${p.title}${cites ? ' ' + cites : ''}\n  ${reqs.join('\n  ')}`
+    );
+  }
+  return lines.join('\n');
+}
+
 // Chat with AI
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, planId, context } = req.body;
-    const response = await chatWithAmplify(message, context || []);
-    
+
+    // Load plan for relevance (role/location/hasAlcohol/programType). If you have user
+    // info in session/JWT, you can also pass it into buildPolicyContext.
+    const plan = planId ? await ProgramPlan.findById(planId).lean() : null;
+    const user = null; // replace with your authenticated user object if available
+
+    // Build concise policy context (filtered by categories & relevance)
+    const policyContext = await buildPolicyContext({ user, plan, message });
+
+    // Prepend a system message with the context (only if we have one)
+    const extraSystem = policyContext
+      ? [{ role: 'system', content: policyContext }]
+      : [];
+
+    // Pass the last few turns + the policy context into the model
+    const augmentedContext = [
+      ...(context || []).slice(-10),
+      ...extraSystem,
+    ];
+
+    const response = await chatWithAmplify(message, augmentedContext);
+
     if (planId) {
-      await ProgramPlan.findByIdAndUpdate(planId, {
-        $push: {
-          conversationHistory: [
-            { role: 'user', content: message },
-            { role: 'assistant', content: response }
-          ]
-        }
-      });
+      await ProgramPlan.findByIdAndUpdate(
+        planId,
+        {
+          $push: {
+            conversationHistory: {
+              $each: [
+                { role: 'user', content: message, timestamp: new Date() },
+                { role: 'assistant', content: response, timestamp: new Date() },
+              ],
+            },
+          },
+        },
+        { new: true }
+      );
     }
-    
+
     res.json({ response });
   } catch (error) {
     console.error('Chat error:', error);
     res.status(500).json({ error: 'Failed to process chat message' });
   }
 });
+
 
 // Policies
 app.get('/api/policies', async (req, res) => {
