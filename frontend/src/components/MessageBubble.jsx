@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { BookmarkIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkIconSolid } from '@heroicons/react/24/solid';
 
-export default function MessageBubble({ role, content, timestamp, onSaveEvent, user, planId }) {
+export default function MessageBubble({ role, content, timestamp, onSaveEvent, user, planId, eventContext }) {
   const isUser = role === 'user';
   const [isSaved, setIsSaved] = useState(false);
 
@@ -23,8 +23,8 @@ export default function MessageBubble({ role, content, timestamp, onSaveEvent, u
     content.includes('by ') && (content.includes('date') || content.includes('time'))
   );
 
-  // Show save button for messages with event-like content
-  const showSaveButton = containsEventContent && onSaveEvent;
+  // Show save button for messages with event-like content, but NOT when in event context mode (continue chat)
+  const showSaveButton = containsEventContent && onSaveEvent && !eventContext;
 
   const handleSaveEvent = async () => {
     if (onSaveEvent && !isSaved) {

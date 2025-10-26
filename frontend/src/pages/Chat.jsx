@@ -793,6 +793,7 @@ Only return the JSON, no other text.`;
       onSaveEvent={handleSaveEvent}
       user={user}
       planId={planId}
+      eventContext={eventContext}
     />
   ))}
 
