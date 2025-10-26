@@ -752,7 +752,7 @@ Only return the JSON, no other text.`;
           <div className="flex items-center space-x-3">
             {eventContext && (
               <button
-                onClick={() => navigate('/saved-events', { 
+                onClick={() => navigate('/events', { 
                   state: { selectedEventId: eventContext.eventId }
                 })}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
