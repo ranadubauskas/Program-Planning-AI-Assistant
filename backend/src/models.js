@@ -121,6 +121,23 @@ const EventSchema = new mongoose.Schema({
   priority: { type: String, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' },
   status: { type: String, enum: ['pending', 'in-progress', 'completed', 'cancelled'], default: 'pending' },
   
+  // Event details that can be updated through chat
+  expectedAttendance: { type: Number },
+  location: {
+    type: { type: String, enum: ['on-campus', 'off-campus'] },
+    venue: String,
+    address: String,
+    room: String
+  },
+  budget: {
+    amount: Number,
+    currency: { type: String, default: 'USD' }
+  },
+  hasAlcohol: { type: Boolean, default: false },
+  requiresAV: { type: Boolean, default: false },
+  cateringRequired: { type: Boolean, default: false },
+  eventType: { type: String, enum: ['mixer', 'concert', 'workshop', 'lecture', 'meeting', 'social', 'academic', 'other'], default: 'other' },
+  
   // Enhanced checklist with timeline
   checklist: [{
     task: { type: String, required: true },

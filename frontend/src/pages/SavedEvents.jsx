@@ -267,11 +267,10 @@ const SavedEvents = ({ user }) => {
       const targetEvent = events.find(event => event._id === location.state.selectedEventId);
       if (targetEvent) {
         setSelectedEvent(targetEvent);
-        // Clear the navigation state after using it
-        navigate('/saved-events', { replace: true });
+        // Don't immediately clear state - let it persist for proper navigation
       }
     }
-  }, [location.state, events, navigate]);
+  }, [location.state, events]);
 
   // Clear expanded tasks when selectedEvent changes
   useEffect(() => {
@@ -476,6 +475,9 @@ const SavedEvents = ({ user }) => {
                         {selectedEvent.priority} priority
                       </span>
                       <span className="capitalize">{selectedEvent.category}</span>
+                      {selectedEvent.expectedAttendance && (
+                        <span>{selectedEvent.expectedAttendance} attendees</span>
+                      )}
                     </div>
                     
                     {/* Continue Chat Button */}

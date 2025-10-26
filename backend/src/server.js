@@ -292,19 +292,54 @@ Description: ${existingEvent.description || 'Not provided'}
 Date: ${existingEvent.eventDate || 'Not set'}
 Category: ${existingEvent.category || 'Not set'}
 Priority: ${existingEvent.priority || 'Not set'}
+Expected Attendance: ${existingEvent.expectedAttendance || 'Not set'}
+Location: ${existingEvent.location?.venue || 'Not set'}
+Budget: ${existingEvent.budget?.amount || 'Not set'}
+Has Alcohol: ${existingEvent.hasAlcohol || false}
+Event Type: ${existingEvent.eventType || 'Not set'}
 
 CONVERSATION TO ANALYZE:
 ${conversation}
 
-Please analyze the conversation and provide ONLY updated event information that has changed or been discussed. Extract any new checklist items, updated descriptions, modified dates, or other changes mentioned. Respond in JSON format with these fields:
-- title: (only if changed)
-- description: (updated description if discussed)
-- eventDate: (only if new date mentioned)
-- category: (only if changed)
-- priority: (only if changed) 
-- checklist: (array of new checklist items with format: {task, dueDate, completed: false, priority, category})
+Analyze this conversation and extract ONLY information that has changed or been explicitly discussed. Look for:
+- Changes to number of attendees/people/guests/expected attendance
+- Updates to event description or details
+- New or modified dates
+- Budget changes or mentions
+- Location updates (venue, room, etc.)
+- Event type changes
+- Alcohol policy mentions
+- New tasks or checklist items
+- Priority or category changes
 
-Return empty fields or omit fields that weren't discussed or changed.`;
+Respond in valid JSON format with only the fields that were discussed or changed:
+{
+  "title": "new title if changed",
+  "description": "updated description if discussed", 
+  "eventDate": "YYYY-MM-DD if new date mentioned",
+  "expectedAttendance": number_if_discussed,
+  "location": {
+    "venue": "venue name if mentioned",
+    "room": "room if mentioned"
+  },
+  "budget": {
+    "amount": number_if_discussed
+  },
+  "hasAlcohol": boolean_if_discussed,
+  "eventType": "type if changed",
+  "category": "category if changed",
+  "priority": "priority if changed",
+  "checklist": [
+    {
+      "task": "task description",
+      "dueDate": "YYYY-MM-DD or null",
+      "priority": "low|medium|high|critical",
+      "category": "category name"
+    }
+  ]
+}
+
+IMPORTANT: Only include fields that were actually discussed or changed. Omit any fields not mentioned in the conversation.`;
 
     let response;
     try {
@@ -330,6 +365,7 @@ Return empty fields or omit fields that weren't discussed or changed.`;
 
     // Ensure we only include fields that make sense
     const filteredEventData = {};
+    
     if (eventData.title && eventData.title !== existingEvent.title) {
       filteredEventData.title = eventData.title;
     }
@@ -345,6 +381,33 @@ Return empty fields or omit fields that weren't discussed or changed.`;
     if (eventData.priority && eventData.priority !== existingEvent.priority) {
       filteredEventData.priority = eventData.priority;
     }
+    
+    // Handle new fields
+    if (typeof eventData.expectedAttendance === 'number' && eventData.expectedAttendance !== existingEvent.expectedAttendance) {
+      filteredEventData.expectedAttendance = eventData.expectedAttendance;
+    }
+    if (eventData.location) {
+      const locationUpdates = {};
+      if (eventData.location.venue && eventData.location.venue !== existingEvent.location?.venue) {
+        locationUpdates.venue = eventData.location.venue;
+      }
+      if (eventData.location.room && eventData.location.room !== existingEvent.location?.room) {
+        locationUpdates.room = eventData.location.room;
+      }
+      if (Object.keys(locationUpdates).length > 0) {
+        filteredEventData.location = { ...existingEvent.location, ...locationUpdates };
+      }
+    }
+    if (eventData.budget && typeof eventData.budget.amount === 'number' && eventData.budget.amount !== existingEvent.budget?.amount) {
+      filteredEventData.budget = { ...existingEvent.budget, amount: eventData.budget.amount };
+    }
+    if (typeof eventData.hasAlcohol === 'boolean' && eventData.hasAlcohol !== existingEvent.hasAlcohol) {
+      filteredEventData.hasAlcohol = eventData.hasAlcohol;
+    }
+    if (eventData.eventType && eventData.eventType !== existingEvent.eventType) {
+      filteredEventData.eventType = eventData.eventType;
+    }
+    
     if (eventData.checklist && Array.isArray(eventData.checklist) && eventData.checklist.length > 0) {
       filteredEventData.checklist = eventData.checklist.map(item => ({
         task: item.task || '',
