@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { 
   CalendarIcon, 
@@ -8,12 +8,15 @@ import {
   TrashIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 
 const SavedEvents = ({ user }) => {
   const { eventId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -258,6 +261,18 @@ const SavedEvents = ({ user }) => {
     fetchEvents();
   }, [user, eventId]);
 
+  // Handle navigation from Chat component with selectedEventId
+  useEffect(() => {
+    if (location.state?.selectedEventId && events.length > 0) {
+      const targetEvent = events.find(event => event._id === location.state.selectedEventId);
+      if (targetEvent) {
+        setSelectedEvent(targetEvent);
+        // Clear the navigation state after using it
+        navigate('/saved-events', { replace: true });
+      }
+    }
+  }, [location.state, events, navigate]);
+
   // Clear expanded tasks when selectedEvent changes
   useEffect(() => {
     setExpandedTasks(new Set());
@@ -359,6 +374,22 @@ const SavedEvents = ({ user }) => {
     }
   };
 
+  const handleContinueChat = (event) => {
+    console.log('🚀 Navigating to chat with event context:', event.title);
+    // Navigate to chat with event context
+    navigate('/chat', {
+      state: {
+        eventContext: {
+          eventId: event._id,
+          title: event.title,
+          description: event.description,
+          eventDate: event.eventDate,
+          sourceMessage: event.sourceMessage
+        }
+      }
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -446,15 +477,19 @@ const SavedEvents = ({ user }) => {
                       </span>
                       <span className="capitalize">{selectedEvent.category}</span>
                     </div>
-                    {selectedEvent.description && (
-                      <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                        <h3 className="font-medium text-gray-900 mb-2">Description:</h3>
-                        <p className="text-gray-700 whitespace-pre-line">
-                          {selectedEvent.description}
-                        </p>
-                      </div>
-                    )}
+                    
+                    {/* Continue Chat Button */}
+                    <div className="mt-4">
+                      <button
+                        onClick={() => handleContinueChat(selectedEvent)}
+                        className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        <ChatBubbleLeftRightIcon className="h-4 w-4 mr-2" />
+                        Continue Chat
+                      </button>
+                    </div>
                   </div>
+                  
                   <button
                     onClick={() => deleteEvent(selectedEvent._id)}
                     className="text-red-600 hover:text-red-800 p-2"
@@ -463,6 +498,16 @@ const SavedEvents = ({ user }) => {
                     <TrashIcon className="h-5 w-5" />
                   </button>
                 </div>
+                
+                {/* Event Description */}
+                {selectedEvent.description && (
+                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                    <h3 className="font-medium text-gray-900 mb-2">Description:</h3>
+                    <p className="text-gray-700 whitespace-pre-line">
+                      {selectedEvent.description}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Checklist */}

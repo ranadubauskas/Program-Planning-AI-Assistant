@@ -1,19 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MessageBubble from '../components/MessageBubble.jsx';
-import { useParams } from 'react-router-dom';
-import { PaperAirplaneIcon, DocumentArrowUpIcon } from '@heroicons/react/24/outline';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
+import { PaperAirplaneIcon, DocumentArrowUpIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 
 const Chat = ({ user }) => {
   const { planId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState(null);
+  const [eventContext, setEventContext] = useState(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    if (planId) {
+    // Check for event context from navigation state
+    if (location.state?.eventContext) {
+      setEventContext(location.state.eventContext);
+      initializeEventChat(location.state.eventContext);
+    } else if (planId) {
       fetchPlan();
     } else {
       // Start with welcome message
@@ -35,11 +42,24 @@ I'll guide you through all the necessary steps and create a personalized checkli
         timestamp: new Date()
       }]);
     }
-  }, [planId, user.firstName]);
+  }, [planId, user.firstName, location.state]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Auto-save event updates when conversation progresses (in event context mode)
+  useEffect(() => {
+    // Only auto-save if we're in event context mode and have meaningful conversation
+    if (eventContext && messages.length >= 3) { // Initial message + at least 1 exchange
+      // Debounce auto-save to avoid excessive API calls
+      const timeoutId = setTimeout(() => {
+        autoUpdateEvent();
+      }, 2000); // Wait 2 seconds after last message
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [messages, eventContext]);
 
   const fetchPlan = async () => {
     try {
@@ -53,6 +73,85 @@ I'll guide you through all the necessary steps and create a personalized checkli
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const initializeEventChat = (eventCtx) => {
+    const eventDate = eventCtx.eventDate ? new Date(eventCtx.eventDate).toLocaleDateString() : 'Not set';
+    
+    setMessages([{
+      role: 'assistant',
+      content: `Hello ${user.firstName}! I see you're continuing our conversation about "${eventCtx.title}".
+
+**Event Details:**
+- **Title:** ${eventCtx.title}
+- **Date:** ${eventDate}
+- **Description:** ${eventCtx.description || 'No description provided'}
+
+I have all the context from our previous conversation. How can I help you continue planning this event? You can ask me to:
+
+• Update or modify the checklist
+• Add new tasks or requirements
+• Get guidance on specific policies or procedures
+• Help with timing and logistics
+• Answer questions about university requirements
+
+What would you like to work on next?`,
+      timestamp: new Date()
+    }]);
+  };
+
+  const autoUpdateEvent = async () => {
+    if (!eventContext || messages.length < 2) return;
+
+    try {
+      console.log('🔄 Auto-updating event with latest chat...');
+      
+      // Get the conversation content for AI processing
+      const conversationContent = messages.slice(1) // Skip the initial message
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n\n');
+      
+      // Use AI to update the event based on the conversation
+      const eventUpdateData = await generateEventUpdateWithAI(conversationContent, eventContext);
+      
+      const updatePayload = {
+        ...eventUpdateData,
+        sourceMessage: {
+          content: conversationContent,
+          timestamp: new Date(),
+          conversationContext: messages.slice(-5).map(m => m.content) // Last 5 messages for context
+        }
+      };
+      
+      console.log('📤 Auto-updating event:', eventContext.eventId);
+      
+      const response = await axios.put(`/api/events/${eventContext.eventId}`, updatePayload);
+      console.log('✅ Event auto-updated successfully');
+      
+      return response.data;
+    } catch (error) {
+      console.error('Auto-update error:', error);
+      // Don't show error to user - this is a background operation
+    }
+  };
+
+  const generateEventUpdateWithAI = async (conversationContent, eventCtx) => {
+    try {
+      const response = await axios.post('/api/chat/generate-event-update', {
+        conversation: conversationContent,
+        existingEvent: eventCtx,
+        instructions: `Based on this conversation, update the event details. Extract any new checklist items, updated descriptions, changed dates, or other modifications discussed. Preserve existing information unless explicitly changed in the conversation.`
+      });
+      
+      return response.data.eventData;
+    } catch (error) {
+      console.error('Error generating event update:', error);
+      // Return minimal update to avoid breaking
+      return {
+        description: eventCtx.description,
+        checklist: []
+      };
+    }
   };
 
   const handleSendMessage = async (e) => {
@@ -70,11 +169,24 @@ I'll guide you through all the necessary steps and create a personalized checkli
     setLoading(true);
 
     try {
-      const response = await axios.post('/api/chat', {
+      const chatPayload = {
         message: inputMessage.trim(),
         planId: planId,
         context: messages.slice(-10) // Send last 10 messages for context
-      });
+      };
+
+      // Add event context if we're continuing from SavedEvents
+      if (eventContext) {
+        chatPayload.eventContext = eventContext;
+        // Include event details in context for AI
+        const eventContextMessage = {
+          role: 'system',
+          content: `Event Context: User is continuing conversation about "${eventContext.title}" (ID: ${eventContext.eventId}). Event date: ${eventContext.eventDate || 'Not set'}. Description: ${eventContext.description || 'None'}. Previous message context: ${eventContext.sourceMessage?.content || 'None'}.`
+        };
+        chatPayload.context = [eventContextMessage, ...chatPayload.context];
+      }
+
+      const response = await axios.post('/api/chat', chatPayload);
 
       const assistantMessage = {
         role: 'assistant',
@@ -620,17 +732,33 @@ Only return the JSON, no other text.`;
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">
-              {plan ? plan.title : 'New Program Plan'}
-            </h1>
-            <p className="text-sm text-gray-500">
-              AI-powered program planning assistance
-            </p>
+          <div className="flex items-center space-x-3">
+            {eventContext && (
+              <button
+                onClick={() => navigate('/saved-events', { 
+                  state: { selectedEventId: eventContext.eventId }
+                })}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Back to Event Details"
+              >
+                <ArrowLeftIcon className="h-5 w-5 text-gray-600" />
+              </button>
+            )}
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900">
+                {eventContext ? `Planning: ${eventContext.title}` : plan ? plan.title : 'New Program Plan'}
+              </h1>
+              <p className="text-sm text-gray-500">
+                {eventContext 
+                  ? 'Continue planning your event with AI assistance'
+                  : 'AI-powered program planning assistance'
+                }
+              </p>
+            </div>
           </div>
-          {plan && (
+          {(plan || eventContext) && (
             <div className="text-sm text-gray-500">
-              Plan ID: {plan._id}
+              {plan ? `Plan ID: ${plan._id}` : `Event: ${eventContext?.eventId}`}
             </div>
           )}
         </div>

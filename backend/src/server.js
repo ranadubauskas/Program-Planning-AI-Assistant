@@ -274,6 +274,99 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// Chat endpoint for generating event updates from conversations
+app.post('/api/chat/generate-event-update', async (req, res) => {
+  try {
+    const { conversation, existingEvent, instructions } = req.body;
+
+    if (!conversation || !existingEvent) {
+      return res.status(400).json({ error: 'Conversation and existing event data are required' });
+    }
+
+    // Create a focused prompt for event update
+    const updatePrompt = `${instructions || 'Update the event based on this conversation.'}
+
+EXISTING EVENT DATA:
+Title: ${existingEvent.title}
+Description: ${existingEvent.description || 'Not provided'}
+Date: ${existingEvent.eventDate || 'Not set'}
+Category: ${existingEvent.category || 'Not set'}
+Priority: ${existingEvent.priority || 'Not set'}
+
+CONVERSATION TO ANALYZE:
+${conversation}
+
+Please analyze the conversation and provide ONLY updated event information that has changed or been discussed. Extract any new checklist items, updated descriptions, modified dates, or other changes mentioned. Respond in JSON format with these fields:
+- title: (only if changed)
+- description: (updated description if discussed)
+- eventDate: (only if new date mentioned)
+- category: (only if changed)
+- priority: (only if changed) 
+- checklist: (array of new checklist items with format: {task, dueDate, completed: false, priority, category})
+
+Return empty fields or omit fields that weren't discussed or changed.`;
+
+    let response;
+    try {
+      response = await chatWithAmplify(updatePrompt, []);
+    } catch (chatError) {
+      console.error('Chat with Amplify failed for event update:', chatError);
+      throw new Error('AI processing failed');
+    }
+
+    // Try to parse the JSON response
+    let eventData;
+    try {
+      // Remove any markdown code blocks if present
+      const cleanResponse = response.replace(/```json\s*|\s*```/g, '').trim();
+      eventData = JSON.parse(cleanResponse);
+    } catch (parseError) {
+      console.warn('Could not parse AI response as JSON, using fallback');
+      eventData = {
+        description: existingEvent.description || '',
+        checklist: []
+      };
+    }
+
+    // Ensure we only include fields that make sense
+    const filteredEventData = {};
+    if (eventData.title && eventData.title !== existingEvent.title) {
+      filteredEventData.title = eventData.title;
+    }
+    if (eventData.description) {
+      filteredEventData.description = eventData.description;
+    }
+    if (eventData.eventDate && eventData.eventDate !== existingEvent.eventDate) {
+      filteredEventData.eventDate = eventData.eventDate;
+    }
+    if (eventData.category && eventData.category !== existingEvent.category) {
+      filteredEventData.category = eventData.category;
+    }
+    if (eventData.priority && eventData.priority !== existingEvent.priority) {
+      filteredEventData.priority = eventData.priority;
+    }
+    if (eventData.checklist && Array.isArray(eventData.checklist) && eventData.checklist.length > 0) {
+      filteredEventData.checklist = eventData.checklist.map(item => ({
+        task: item.task || '',
+        dueDate: item.dueDate || null,
+        completed: false,
+        priority: item.priority || 'medium',
+        category: item.category || 'general'
+      }));
+    }
+
+    filteredEventData.updatedAt = new Date();
+
+    res.json({ eventData: filteredEventData });
+  } catch (error) {
+    console.error('Generate event update error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate event update',
+      eventData: { description: '', checklist: [] } // Fallback
+    });
+  }
+});
+
 // Policies
 app.get('/api/policies', async (req, res) => {
   try {
@@ -366,12 +459,51 @@ app.get('/api/events/:id', async (req, res) => {
 
 app.put('/api/events/:id', async (req, res) => {
   try {
-    const event = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!event) {
+    console.log('🔄 Updating event:', req.params.id);
+    console.log('📝 Update data:', req.body);
+    
+    // Get the existing event first
+    const existingEvent = await Event.findById(req.params.id);
+    if (!existingEvent) {
       return res.status(404).json({ error: 'Event not found' });
     }
+
+    // Handle checklist merging intelligently
+    let updateData = { ...req.body };
+    if (req.body.checklist && Array.isArray(req.body.checklist) && req.body.checklist.length > 0) {
+      const existingChecklist = existingEvent.checklist || [];
+      
+      // Add new checklist items while preserving existing ones
+      // Only add items that don't already exist (based on task text similarity)
+      const newItems = req.body.checklist.filter(newItem => {
+        return !existingChecklist.some(existingItem => 
+          existingItem.task.toLowerCase().includes(newItem.task.toLowerCase().substring(0, 20)) ||
+          newItem.task.toLowerCase().includes(existingItem.task.toLowerCase().substring(0, 20))
+        );
+      });
+      
+      if (newItems.length > 0) {
+        console.log(`➕ Adding ${newItems.length} new checklist items`);
+        updateData.checklist = [...existingChecklist, ...newItems];
+      } else {
+        // No new items to add, keep existing checklist
+        delete updateData.checklist;
+        console.log('✅ No new checklist items to add');
+      }
+    }
+
+    updateData.updatedAt = new Date();
+
+    const event = await Event.findByIdAndUpdate(
+      req.params.id, 
+      updateData, 
+      { new: true, runValidators: true }
+    );
+    
+    console.log('✅ Event updated successfully');
     res.json(event);
   } catch (error) {
+    console.error('❌ Event update error:', error);
     res.status(400).json({ error: error.message });
   }
 });
