@@ -5,7 +5,10 @@ import {
   CalendarIcon, 
   ClockIcon, 
   CheckCircleIcon, 
-  TrashIcon
+  TrashIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  InformationCircleIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 
@@ -14,10 +17,251 @@ const SavedEvents = ({ user }) => {
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [expandedTasks, setExpandedTasks] = useState(new Set());
+
+  // Function to organize checklist by time periods (for backward compatibility)
+  const organizeChecklistByTimePeriods = (checklist, eventDate) => {
+    if (!eventDate || !checklist || checklist.length === 0) {
+      return checklist;
+    }
+
+    // If checklist already has time headers, return as is
+    if (checklist.some(item => item.isTimeHeader)) {
+      return checklist;
+    }
+
+    const eventDateTime = new Date(eventDate);
+    
+    // Categorize tasks by time periods
+    const timePeriods = {
+      '6+ months out': [],
+      '3-6 months out': [],
+      '1-3 months out': [],
+      '2-4 weeks out': [],
+      '1-2 weeks out': [],
+      'Week of event': [],
+      'Day of event': [],
+      'After event': []
+    };
+    
+    checklist.forEach(task => {
+      if (!task.dueDate) {
+        // Tasks without due dates go to the earliest applicable period
+        timePeriods['3-6 months out'].push(task);
+        return;
+      }
+      
+      const dueDate = new Date(task.dueDate);
+      const daysUntilEvent = Math.ceil((eventDateTime - dueDate) / (1000 * 60 * 60 * 24));
+      
+      // Categorize based on how far before the event the task is due
+      if (daysUntilEvent >= 180) { // 6+ months
+        timePeriods['6+ months out'].push(task);
+      } else if (daysUntilEvent >= 90) { // 3-6 months
+        timePeriods['3-6 months out'].push(task);
+      } else if (daysUntilEvent >= 30) { // 1-3 months
+        timePeriods['1-3 months out'].push(task);
+      } else if (daysUntilEvent >= 14) { // 2-4 weeks
+        timePeriods['2-4 weeks out'].push(task);
+      } else if (daysUntilEvent >= 7) { // 1-2 weeks
+        timePeriods['1-2 weeks out'].push(task);
+      } else if (daysUntilEvent >= 1) { // Week of event
+        timePeriods['Week of event'].push(task);
+      } else if (daysUntilEvent >= 0) { // Day of event
+        timePeriods['Day of event'].push(task);
+      } else { // After event
+        timePeriods['After event'].push(task);
+      }
+    });
+    
+    // Create organized checklist with time period headers
+    const organizedChecklist = [];
+    
+    Object.entries(timePeriods).forEach(([period, tasks]) => {
+      if (tasks.length > 0) {
+        // Add time period header
+        organizedChecklist.push({
+          task: `--- ${period.toUpperCase()} ---`,
+          isTimeHeader: true,
+          timePeriod: period,
+          dueDate: null,
+          priority: 'medium',
+          completed: false
+        });
+        
+        // Sort tasks within the period by priority (critical first) then by due date
+        tasks.sort((a, b) => {
+          const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+          const aPriority = priorityOrder[a.priority] || 2;
+          const bPriority = priorityOrder[b.priority] || 2;
+          
+          if (aPriority !== bPriority) return aPriority - bPriority;
+          
+          if (!a.dueDate && !b.dueDate) return 0;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return new Date(a.dueDate) - new Date(b.dueDate);
+        });
+        
+        // Add the sorted tasks
+        organizedChecklist.push(...tasks);
+      }
+    });
+    
+    return organizedChecklist;
+  };
+
+  // Get organized checklist for display
+  const getOrganizedChecklist = (event) => {
+    if (!event || !event.checklist) return [];
+    return organizeChecklistByTimePeriods(event.checklist, event.eventDate);
+  };
+
+  // Toggle task details expansion
+  const toggleTaskDetails = (taskId) => {
+    const newExpanded = new Set(expandedTasks);
+    if (newExpanded.has(taskId)) {
+      newExpanded.delete(taskId);
+    } else {
+      newExpanded.add(taskId);
+    }
+    setExpandedTasks(newExpanded);
+  };
+
+  // Generate enhanced task details
+  const getTaskDetails = (task, event) => {
+    if (!task || task.isTimeHeader) return null;
+
+    const taskLower = task.task.toLowerCase();
+    let details = {
+      estimatedTime: getEstimatedTime(taskLower),
+      dependencies: getDependencies(taskLower),
+      tips: getTips(taskLower, event),
+      resources: getResources(taskLower),
+      deadlineReason: getDeadlineReason(task, event)
+    };
+
+    return details;
+  };
+
+  const getEstimatedTime = (taskText) => {
+    if (taskText.includes('book') || taskText.includes('reserve')) return '2-3 hours';
+    if (taskText.includes('invitation') || taskText.includes('invite')) return '1-2 hours';
+    if (taskText.includes('catering') || taskText.includes('food')) return '1-3 hours';
+    if (taskText.includes('setup') || taskText.includes('equipment')) return '3-5 hours';
+    if (taskText.includes('marketing') || taskText.includes('promotion')) return '2-4 hours';
+    if (taskText.includes('budget') || taskText.includes('funding')) return '4-6 hours';
+    return '1-2 hours';
+  };
+
+  const getDependencies = (taskText) => {
+    const dependencies = [];
+    if (taskText.includes('invitation')) dependencies.push('Venue must be confirmed', 'Guest list finalized');
+    if (taskText.includes('catering')) dependencies.push('Final headcount needed', 'Dietary restrictions collected');
+    if (taskText.includes('setup')) dependencies.push('Equipment list confirmed', 'Venue access arranged');
+    if (taskText.includes('marketing')) dependencies.push('Event details finalized', 'Approval from administration');
+    return dependencies;
+  };
+
+  const getTips = (taskText, event) => {
+    const tips = [];
+    
+    if (taskText.includes('book') || taskText.includes('venue')) {
+      tips.push('Book popular venues 4-6 weeks in advance');
+      tips.push('Confirm AV equipment availability and setup requirements');
+      tips.push('Check venue capacity against expected attendance');
+    }
+    
+    if (taskText.includes('invitation')) {
+      tips.push('Send invitations 2-3 weeks before the event');
+      tips.push('Include RSVP deadline 1 week before event');
+      tips.push('Consider dietary restrictions and accessibility needs');
+    }
+    
+    if (taskText.includes('catering')) {
+      tips.push('Confirm final headcount 48 hours before event');
+      tips.push('Have backup food options for dietary restrictions');
+      tips.push('Coordinate delivery time with venue access');
+    }
+    
+    if (taskText.includes('setup')) {
+      tips.push('Arrive 2-3 hours early for complex setups');
+      tips.push('Test all AV equipment before guests arrive');
+      tips.push('Have backup plans for technical issues');
+    }
+
+    if (taskText.includes('budget')) {
+      tips.push('Include 10-15% buffer for unexpected costs');
+      tips.push('Get written quotes from all vendors');
+      tips.push('Track expenses in a spreadsheet throughout planning');
+    }
+    
+    return tips;
+  };
+
+  const getResources = (taskText) => {
+    const resources = [];
+    
+    if (taskText.includes('venue') || taskText.includes('book')) {
+      resources.push('Vanderbilt Event Services: (615) 322-2471');
+      resources.push('Campus venue booking system');
+      resources.push('Facilities Management for setup requirements');
+    }
+    
+    if (taskText.includes('catering') || taskText.includes('food')) {
+      resources.push('Vanderbilt Catering: (615) 322-2641');
+      resources.push('Approved external catering vendors list');
+      resources.push('Dining Services for on-campus options');
+    }
+    
+    if (taskText.includes('marketing') || taskText.includes('promotion')) {
+      resources.push('Student Communications office');
+      resources.push('University social media guidelines');
+      resources.push('Campus digital signage system');
+    }
+    
+    if (taskText.includes('budget') || taskText.includes('funding')) {
+      resources.push('Student Organization funding guidelines');
+      resources.push('Finance office: (615) 322-3488');
+      resources.push('Reimbursement forms and procedures');
+    }
+    
+    return resources;
+  };
+
+  const getDeadlineReason = (task, event) => {
+    if (!task.dueDate || !event.eventDate) return null;
+    
+    const dueDate = new Date(task.dueDate);
+    const eventDate = new Date(event.eventDate);
+    const daysUntilEvent = Math.ceil((eventDate - dueDate) / (1000 * 60 * 60 * 24));
+    
+    const taskLower = task.task.toLowerCase();
+    
+    if (taskLower.includes('venue')) {
+      return `Booking ${daysUntilEvent} days early ensures availability and allows time for backup options if needed.`;
+    }
+    if (taskLower.includes('invitation')) {
+      return `Sending invitations ${daysUntilEvent} days early gives guests adequate notice while maintaining interest.`;
+    }
+    if (taskLower.includes('catering')) {
+      return `Finalizing catering ${daysUntilEvent} days early allows for accurate headcount and food preparation.`;
+    }
+    if (taskLower.includes('setup')) {
+      return `Setting up ${daysUntilEvent} days early provides buffer time for troubleshooting any issues.`;
+    }
+    
+    return `This timeline ensures adequate preparation time for a successful event.`;
+  };
 
   useEffect(() => {
     fetchEvents();
   }, [user, eventId]);
+
+  // Clear expanded tasks when selectedEvent changes
+  useEffect(() => {
+    setExpandedTasks(new Set());
+  }, [selectedEvent]);
 
   const fetchEvents = async () => {
     try {
@@ -52,13 +296,24 @@ const SavedEvents = ({ user }) => {
     }
   };
 
-  const toggleChecklistItem = async (itemIndex) => {
+  const toggleChecklistItem = async (displayIndex, originalTask) => {
     if (!selectedEvent) return;
 
+    // Don't allow toggling time headers
+    if (originalTask.isTimeHeader) return;
+
     try {
+      // Find the original index of the task in the raw checklist
+      const originalIndex = selectedEvent.checklist.findIndex(item => 
+        item._id === originalTask._id || 
+        (item.task === originalTask.task && item.dueDate === originalTask.dueDate)
+      );
+
+      if (originalIndex === -1) return;
+
       // Create updated checklist with toggled item
       const updatedChecklist = selectedEvent.checklist.map((item, index) => 
-        index === itemIndex ? { ...item, completed: !item.completed } : item
+        index === originalIndex ? { ...item, completed: !item.completed } : item
       );
 
       // Update the event with the new checklist
@@ -157,8 +412,8 @@ const SavedEvents = ({ user }) => {
                             {event.priority}
                           </span>
                           <span className="text-xs text-gray-500">
-                            {event.checklist?.filter(item => item.completed).length || 0}/
-                            {event.checklist?.length || 0} tasks
+                            {event.checklist?.filter(item => !item.isTimeHeader && item.completed).length || 0}/
+                            {event.checklist?.filter(item => !item.isTimeHeader).length || 0} tasks
                           </span>
                         </div>
                       </div>
@@ -211,42 +466,176 @@ const SavedEvents = ({ user }) => {
               </div>
 
               {/* Checklist */}
-              {selectedEvent.checklist && selectedEvent.checklist.length > 0 && (
-                <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-                  <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                    Checklist ({selectedEvent.checklist.filter(item => item.completed).length}/
-                    {selectedEvent.checklist.length})
-                  </h2>
-                  <div className="space-y-3">
-                    {selectedEvent.checklist.map((item, index) => (
-                      <div 
-                        key={index} 
-                        className="flex items-start space-x-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => toggleChecklistItem(index)}
-                      >
-                        <CheckCircleIconSolid 
-                          className={`h-5 w-5 mt-0.5 flex-shrink-0 transition-colors ${
-                            item.completed ? 'text-green-600 hover:text-green-700' : 'text-gray-300 hover:text-gray-400'
-                          }`} 
-                        />
-                        <div className="flex-1">
-                          <p className={`transition-all ${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                            {item.task}
-                          </p>
-                          {item.description && (
-                            <p className="text-sm text-gray-500 mt-1">{item.description}</p>
-                          )}
-                          {item.dueDate && (
-                            <p className="text-xs text-gray-400 mt-1">
-                              Due: {new Date(item.dueDate).toLocaleDateString()}
-                            </p>
+              {selectedEvent.checklist && selectedEvent.checklist.length > 0 && (() => {
+                const organizedChecklist = getOrganizedChecklist(selectedEvent);
+                const taskCount = organizedChecklist.filter(item => !item.isTimeHeader).length;
+                const completedCount = organizedChecklist.filter(item => !item.isTimeHeader && item.completed).length;
+                
+                return (
+                  <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                    <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                      Checklist ({completedCount}/{taskCount})
+                    </h2>
+                    <div className="space-y-2">
+                      {organizedChecklist.map((item, index) => (
+                        <div key={index}>
+                          {item.isTimeHeader ? (
+                            // Time period header
+                            <div className="bg-vanderbilt-gold bg-opacity-10 border-l-4 border-vanderbilt-gold px-4 py-2 mt-6 first:mt-0">
+                              <h3 className="font-semibold text-gray-900 text-sm">
+                                {item.task.replace(/^---\s*/, '').replace(/\s*---$/, '')}
+                              </h3>
+                            </div>
+                          ) : (
+                            // Regular checklist item
+                            <div className="ml-4 border-l-2 border-gray-100">
+                              <div className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                                {/* Checkbox for completion */}
+                                <CheckCircleIconSolid 
+                                  className={`h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer transition-colors ${
+                                    item.completed ? 'text-green-600 hover:text-green-700' : 'text-gray-300 hover:text-gray-400'
+                                  }`} 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleChecklistItem(index, item);
+                                  }}
+                                />
+                                
+                                {/* Task content */}
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between">
+                                    <p className={`transition-all ${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                                      {item.task}
+                                    </p>
+                                    
+                                    {/* Details toggle button */}
+                                    <button
+                                      onClick={() => toggleTaskDetails(item._id || `${index}-${item.task}`)}
+                                      className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                      title="View details"
+                                    >
+                                      {expandedTasks.has(item._id || `${index}-${item.task}`) ? (
+                                        <ChevronDownIcon className="h-4 w-4" />
+                                      ) : (
+                                        <ChevronRightIcon className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                  </div>
+                                  
+                                  {item.description && (
+                                    <p className="text-sm text-gray-500 mt-1">{item.description}</p>
+                                  )}
+                                  
+                                  <div className="flex items-center space-x-4 mt-2">
+                                    {item.dueDate && (
+                                      <p className="text-xs text-gray-400">
+                                        Due: {new Date(item.dueDate).toLocaleDateString()}
+                                      </p>
+                                    )}
+                                    {item.priority && item.priority !== 'medium' && (
+                                      <span className={`px-2 py-1 text-xs rounded-full ${getPriorityColor(item.priority)}`}>
+                                        {item.priority}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Expandable task details */}
+                              {expandedTasks.has(item._id || `${index}-${item.task}`) && (() => {
+                                const taskDetails = getTaskDetails(item, selectedEvent);
+                                if (!taskDetails) return null;
+                                
+                                return (
+                                  <div className="ml-8 pb-4 border-l border-gray-200 pl-4">
+                                    <div className="bg-blue-50 rounded-lg p-4 space-y-4">
+                                      
+                                      {/* Estimated Time */}
+                                      <div>
+                                        <h4 className="flex items-center text-sm font-medium text-gray-900 mb-2">
+                                          <ClockIcon className="h-4 w-4 mr-1 text-blue-600" />
+                                          Estimated Time
+                                        </h4>
+                                        <p className="text-sm text-gray-700">{taskDetails.estimatedTime}</p>
+                                      </div>
+
+                                      {/* Dependencies */}
+                                      {taskDetails.dependencies.length > 0 && (
+                                        <div>
+                                          <h4 className="flex items-center text-sm font-medium text-gray-900 mb-2">
+                                            <CheckCircleIcon className="h-4 w-4 mr-1 text-orange-600" />
+                                            Dependencies
+                                          </h4>
+                                          <ul className="text-sm text-gray-700 space-y-1">
+                                            {taskDetails.dependencies.map((dep, depIndex) => (
+                                              <li key={depIndex} className="flex items-start">
+                                                <span className="text-orange-600 mr-2">•</span>
+                                                {dep}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+
+                                      {/* Tips */}
+                                      {taskDetails.tips.length > 0 && (
+                                        <div>
+                                          <h4 className="flex items-center text-sm font-medium text-gray-900 mb-2">
+                                            <InformationCircleIcon className="h-4 w-4 mr-1 text-green-600" />
+                                            Tips & Best Practices
+                                          </h4>
+                                          <ul className="text-sm text-gray-700 space-y-1">
+                                            {taskDetails.tips.map((tip, tipIndex) => (
+                                              <li key={tipIndex} className="flex items-start">
+                                                <span className="text-green-600 mr-2">•</span>
+                                                {tip}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+
+                                      {/* Resources */}
+                                      {taskDetails.resources.length > 0 && (
+                                        <div>
+                                          <h4 className="flex items-center text-sm font-medium text-gray-900 mb-2">
+                                            <CalendarIcon className="h-4 w-4 mr-1 text-purple-600" />
+                                            Resources & Contacts
+                                          </h4>
+                                          <ul className="text-sm text-gray-700 space-y-1">
+                                            {taskDetails.resources.map((resource, resourceIndex) => (
+                                              <li key={resourceIndex} className="flex items-start">
+                                                <span className="text-purple-600 mr-2">•</span>
+                                                {resource}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
+
+                                      {/* Deadline Reason */}
+                                      {taskDetails.deadlineReason && (
+                                        <div>
+                                          <h4 className="flex items-center text-sm font-medium text-gray-900 mb-2">
+                                            <InformationCircleIcon className="h-4 w-4 mr-1 text-indigo-600" />
+                                            Why This Timing?
+                                          </h4>
+                                          <p className="text-sm text-gray-700 italic">{taskDetails.deadlineReason}</p>
+                                        </div>
+                                      )}
+                                      
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
                           )}
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Source Message */}
               {selectedEvent.sourceMessage && (

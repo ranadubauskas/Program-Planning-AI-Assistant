@@ -98,10 +98,16 @@ I'll guide you through all the necessary steps and create a personalized checkli
 
   const handleSaveEvent = async (content, timestamp, currentPlanId) => {
     try {
-      // Use AI to intelligently generate event data
-      const eventData = await generateEventWithAI(content, timestamp, currentPlanId);
+      console.log('🔄 Starting event save process...');
+      console.log('Content:', content);
+      console.log('User ID:', user._id);
       
-      const response = await axios.post('/api/events', {
+      // Use AI to intelligently generate event data
+      console.log('🤖 Generating event data with AI...');
+      const eventData = await generateEventWithAI(content, timestamp, currentPlanId);
+      console.log('✅ Event data generated:', eventData);
+      
+      const eventPayload = {
         ...eventData,
         userId: user._id,
         planId: currentPlanId || planId,
@@ -110,20 +116,31 @@ I'll guide you through all the necessary steps and create a personalized checkli
           timestamp,
           conversationContext: messages.slice(-3).map(m => m.content) // Last 3 messages for context
         }
-      });
+      };
+      
+      console.log('📤 Sending event to backend:', eventPayload);
+      
+      const response = await axios.post('/api/events', eventPayload);
 
-      console.log('Event saved:', response.data);
+      console.log('✅ Event saved successfully:', response.data);
       alert('Event saved successfully!'); // Temporary feedback
     } catch (error) {
-      console.error('Error saving event:', error);
-      alert('Failed to save event. Please try again.');
+      console.error('❌ Error saving event:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      alert(`Failed to save event: ${error.response?.data?.error || error.message}`);
     }
   };
 
   const generateEventWithAI = async (content, timestamp, currentPlanId) => {
     try {
+      console.log('🤖 Starting AI event generation...');
+      
       // Create a focused prompt for the AI to generate structured event data
-      const eventPrompt = `Based on this message, create a structured event with a clear title and organized checklist:
+      const eventPrompt = `Based on this message, create a structured event with a comprehensive time-organized checklist:
 
 "${content}"
 
@@ -144,26 +161,85 @@ Generate a JSON response with this exact structure:
   ]
 }
 
-Rules:
-1. Extract the main event date if mentioned (e.g., "April 7th 2026" -> "2026-04-07")
-2. Create logical task due dates that work backwards from the event date
-3. Sort checklist by due dates (earliest tasks first)
-4. Venue booking: 3-4 weeks before event
-5. Invitations: 2-3 weeks before event  
-6. Catering/Food: 1-2 weeks before event
-7. Setup/Equipment: 2-3 days before event
-8. Make the title concise but descriptive (e.g., "Workshop May 2025", "Meeting Q1 2024")
+COMPREHENSIVE TIMELINE RULES (work backwards from event date):
+
+**6+ MONTHS OUT - Strategic Planning:**
+- Budget planning and funding requests
+- Concept development and proposals
+- Sponsorship outreach
+- Initial venue research for large events
+
+**3-6 MONTHS OUT - Major Bookings & Permissions:**
+- Venue booking and contracts
+- Permits and licenses
+- Security arrangements
+- Insurance requirements
+- Speaker/performer bookings
+- Major vendor contracts
+
+**1-3 MONTHS OUT - Marketing & Communications:**
+- Marketing strategy and materials
+- Website updates and social media
+- Publicity campaigns
+- Guest confirmations
+- Registration setup
+
+**2-4 WEEKS OUT - Invitations & RSVPs:**
+- Send invitations
+- Guest list management
+- RSVP tracking
+- Ticket distribution
+- Dietary requirements collection
+
+**1-2 WEEKS OUT - Catering & Supplies:**
+- Finalize catering orders
+- Purchase supplies and decorations
+- Coordinate material deliveries
+- Prepare welcome materials/swag
+- Menu final approvals
+
+**WEEK OF EVENT - Final Preparations:**
+- Confirm all arrangements
+- Final headcount to vendors
+- Prepare event program/agenda
+- Brief staff and volunteers
+- Final venue walkthrough
+
+**2-3 DAYS BEFORE - Setup & Equipment:**
+- Equipment setup and testing
+- AV and technical preparations
+- Stage/room setup
+- Signage installation
+- Final venue preparations
+
+**DAY OF EVENT:**
+- Event execution and management
+- Real-time coordination
+- Problem solving
+
+**AFTER EVENT:**
+- Cleanup and breakdown
+- Equipment returns
+- Thank you communications
+- Event evaluation
+- Final invoicing and reports
+
+Generate 8-15 relevant tasks across these time periods. Make tasks specific and actionable.
 
 Only return the JSON, no other text.`;
 
+      console.log('📡 Calling AI chat API for event generation...');
       const aiResponse = await axios.post('/api/chat', {
         message: eventPrompt,
         planId: currentPlanId,
         context: [] // No context needed for this focused task
       });
 
+      console.log('🤖 AI Response received:', aiResponse.data);
+      
       // Parse the AI response to get structured data
       const aiContent = aiResponse.data.response;
+      console.log('📝 AI Content:', aiContent);
       
       // Try to extract JSON from the AI response
       let eventData;
@@ -176,31 +252,50 @@ Only return the JSON, no other text.`;
           throw new Error('No JSON found in AI response');
         }
       } catch (parseError) {
-        console.warn('Failed to parse AI response, using fallback:', parseError);
+        console.warn('⚠️ Failed to parse AI response, using fallback:', parseError);
         // Fallback to simple extraction if AI parsing fails
         eventData = extractEventFromContent(content, timestamp, currentPlanId);
+        console.log('🔄 Fallback event data:', eventData);
       }
 
       // Validate and clean the data
-      return {
+      const eventDate = eventData.eventDate ? new Date(eventData.eventDate) : null;
+      let checklist = eventData.checklist || [];
+      
+      console.log('📋 Raw checklist:', checklist);
+      
+      // Always apply time organization to the checklist
+      if (checklist.length > 0) {
+        checklist = organizeChecklistByTimePeriods(checklist, eventDate);
+        console.log('🗓️ Organized checklist:', checklist);
+      }
+      
+      const finalEventData = {
         title: eventData.title || 'Event from Chat',
         description: eventData.description || 'Event planning checklist',
-        eventDate: eventData.eventDate ? new Date(eventData.eventDate) : null,
+        eventDate: eventDate,
         category: eventData.category || 'task',
         priority: eventData.priority || 'medium',
-        checklist: eventData.checklist || [],
+        checklist: checklist,
         timeline: [], // Focus on checklist
         status: 'pending'
       };
+      
+      console.log('✅ Final event data:', finalEventData);
+      return finalEventData;
 
     } catch (error) {
-      console.warn('AI event generation failed, using fallback:', error);
+      console.warn('⚠️ AI event generation failed, using fallback:', error);
       // Fallback to the original extraction method if AI call fails
-      return extractEventFromContent(content, timestamp, currentPlanId);
+      const fallbackData = extractEventFromContent(content, timestamp, currentPlanId);
+      console.log('🔄 Fallback extraction result:', fallbackData);
+      return fallbackData;
     }
   };
 
   const extractEventFromContent = (content, timestamp, currentPlanId) => {
+    console.log('🔄 Extracting event from content (fallback method)...');
+    
     const lines = content.split('\n');
     const lowerContent = content.toLowerCase();
     
@@ -210,13 +305,16 @@ Only return the JSON, no other text.`;
     let category = detectEventCategory(content);
     let priority = detectPriority(content);
     
+    console.log('📊 Extracted basic info:', { title, eventDate, category, priority });
+    
     // Focus on extracting and organizing checklist with intelligent due dates
     const checklist = extractAndOrganizeChecklist(content, eventDate);
+    console.log('📋 Extracted checklist:', checklist);
     
     // Create minimal description (just the event summary, not the full content)
     let description = extractEventSummary(content);
 
-    return {
+    const extractedData = {
       title,
       description,
       eventDate,
@@ -226,6 +324,9 @@ Only return the JSON, no other text.`;
       timeline: [], // Focus on checklist, minimal timeline
       status: 'pending'
     };
+    
+    console.log('📦 Complete extracted data:', extractedData);
+    return extractedData;
   };
 
   const generateSmartEventName = (content) => {
@@ -321,15 +422,102 @@ Only return the JSON, no other text.`;
       }
     });
     
-    // Sort checklist by due dates (earliest first)
-    checklist.sort((a, b) => {
-      if (!a.dueDate && !b.dueDate) return 0;
-      if (!a.dueDate) return 1;
-      if (!b.dueDate) return -1;
-      return new Date(a.dueDate) - new Date(b.dueDate);
+    // Organize checklist by time periods and add time period labels
+    return organizeChecklistByTimePeriods(checklist, mainEventDate);
+  };
+
+  const organizeChecklistByTimePeriods = (checklist, eventDate) => {
+    if (!eventDate || !checklist || checklist.length === 0) {
+      // If no event date, just sort by due date and return as is
+      checklist.sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      });
+      return checklist;
+    }
+
+    const eventDateTime = new Date(eventDate);
+    const now = new Date();
+    
+    // Categorize tasks by time periods
+    const timePeriods = {
+      '6+ months out': [],
+      '3-6 months out': [],
+      '1-3 months out': [],
+      '2-4 weeks out': [],
+      '1-2 weeks out': [],
+      'Week of event': [],
+      'Day of event': [],
+      'After event': []
+    };
+    
+    checklist.forEach(task => {
+      if (!task.dueDate) {
+        // Tasks without due dates go to the earliest applicable period
+        timePeriods['3-6 months out'].push(task);
+        return;
+      }
+      
+      const dueDate = new Date(task.dueDate);
+      const daysUntilEvent = Math.ceil((eventDateTime - dueDate) / (1000 * 60 * 60 * 24));
+      
+      // Categorize based on how far before the event the task is due
+      if (daysUntilEvent >= 180) { // 6+ months
+        timePeriods['6+ months out'].push(task);
+      } else if (daysUntilEvent >= 90) { // 3-6 months
+        timePeriods['3-6 months out'].push(task);
+      } else if (daysUntilEvent >= 30) { // 1-3 months
+        timePeriods['1-3 months out'].push(task);
+      } else if (daysUntilEvent >= 14) { // 2-4 weeks
+        timePeriods['2-4 weeks out'].push(task);
+      } else if (daysUntilEvent >= 7) { // 1-2 weeks
+        timePeriods['1-2 weeks out'].push(task);
+      } else if (daysUntilEvent >= 1) { // Week of event
+        timePeriods['Week of event'].push(task);
+      } else if (daysUntilEvent >= 0) { // Day of event
+        timePeriods['Day of event'].push(task);
+      } else { // After event
+        timePeriods['After event'].push(task);
+      }
     });
     
-    return checklist;
+    // Create organized checklist with time period headers
+    const organizedChecklist = [];
+    
+    Object.entries(timePeriods).forEach(([period, tasks]) => {
+      if (tasks.length > 0) {
+        // Add time period header
+        organizedChecklist.push({
+          task: `--- ${period.toUpperCase()} ---`,
+          isTimeHeader: true,
+          timePeriod: period,
+          dueDate: null,
+          priority: 'medium',
+          completed: false
+        });
+        
+        // Sort tasks within the period by priority (critical first) then by due date
+        tasks.sort((a, b) => {
+          const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+          const aPriority = priorityOrder[a.priority] || 2;
+          const bPriority = priorityOrder[b.priority] || 2;
+          
+          if (aPriority !== bPriority) return aPriority - bPriority;
+          
+          if (!a.dueDate && !b.dueDate) return 0;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return new Date(a.dueDate) - new Date(b.dueDate);
+        });
+        
+        // Add the sorted tasks
+        organizedChecklist.push(...tasks);
+      }
+    });
+    
+    return organizedChecklist;
   };
 
   const parseTaskWithDueDate = (taskText, mainEventDate) => {

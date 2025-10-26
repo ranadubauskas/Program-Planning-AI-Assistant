@@ -112,7 +112,7 @@ PolicySchema.index({ title: 'text', description: 'text', category: 'text', tags:
 
 // Event schema for saved events from chat
 const EventSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { type: mongoose.Schema.Types.Mixed, required: true }, // Allow both ObjectId and string for temp users
   planId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProgramPlan' },
   title: { type: String, required: true },
   description: { type: String },
@@ -131,7 +131,9 @@ const EventSchema = new mongoose.Schema({
     completedAt: Date,
     estimatedHours: Number,
     category: String,
-    dependencies: [String] // References to other tasks
+    dependencies: [String], // References to other tasks
+    isTimeHeader: { type: Boolean, default: false }, // For time period headers
+    timePeriod: String // Time period label for headers
   }],
   
   // Timeline milestones
