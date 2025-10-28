@@ -538,15 +538,23 @@ const SavedEvents = ({ user }) => {
                             <div className="ml-4 border-l-2 border-gray-100">
                               <div className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
                                 {/* Checkbox for completion */}
-                                <CheckCircleIconSolid 
-                                  className={`h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer transition-colors ${
-                                    item.completed ? 'text-green-600 hover:text-green-700' : 'text-gray-300 hover:text-gray-400'
-                                  }`} 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleChecklistItem(index, item);
-                                  }}
-                                />
+                                {item.completed ? (
+                                  <CheckCircleIconSolid 
+                                    className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-green-600 hover:text-green-700 transition-colors" 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleChecklistItem(index, item);
+                                    }}
+                                  />
+                                ) : (
+                                  <CheckCircleIcon 
+                                    className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-gray-300 hover:text-gray-500 transition-colors" 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleChecklistItem(index, item);
+                                    }}
+                                  />
+                                )}
                                 
                                 {/* Task content */}
                                 <div className="flex-1">
