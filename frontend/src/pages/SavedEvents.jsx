@@ -399,12 +399,16 @@ const SavedEvents = ({ user }) => {
       // Clear the override since server update was successful
       console.log('🧹 Clearing override for:', taskKey);
       console.log('📊 Server returned completed state:', updatedEvent.checklist[originalIndex]?.completed);
-      setChecklistOverrides(prev => {
-        const newOverrides = { ...prev };
-        delete newOverrides[taskKey];
-        console.log('🔄 Overrides after clearing:', newOverrides);
-        return newOverrides;
-      });
+      
+      // Add a small delay before clearing the override to ensure the component has updated
+      setTimeout(() => {
+        setChecklistOverrides(prev => {
+          const newOverrides = { ...prev };
+          delete newOverrides[taskKey];
+          console.log('🔄 Overrides after clearing (delayed):', newOverrides);
+          return newOverrides;
+        });
+      }, 100);
 
       // Force a re-render
       setRenderKey(prev => prev + 1);
@@ -602,12 +606,7 @@ const SavedEvents = ({ user }) => {
                           ) : (
                             // Regular checklist item
                             <div className="ml-4 border-l-2 border-gray-100">
-                              <div 
-                                className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
-                                onClick={(e) => {
-                                  console.log('🎯 Parent div clicked!', e.target);
-                                }}
-                              >
+                              <div className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
                                 {/* Checkbox for completion */}
                                 <div 
                                   className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer"
