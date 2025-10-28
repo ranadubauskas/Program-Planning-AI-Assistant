@@ -359,32 +359,60 @@ const SavedEvents = ({ user }) => {
         return;
       }
 
-      // Create updated checklist with toggled item
+      // Get the CURRENT effective state (including any optimistic updates)
+      const currentEffectiveState = getEffectiveCompletedState(selectedEvent.checklist[originalIndex], originalIndex);
+      const newCompletedState = !currentEffectiveState;
+
+      console.log('💾 Toggle operation:', { 
+        databaseCompleted: selectedEvent.checklist[originalIndex].completed,
+        currentEffectiveState: currentEffectiveState,
+        newTargetState: newCompletedState
+      });
+
+      // Create updated checklist with toggled item based on effective state
       const updatedChecklist = selectedEvent.checklist.map((item, index) => 
-        index === originalIndex ? { ...item, completed: !item.completed } : item
+        index === originalIndex ? { ...item, completed: newCompletedState } : item
       );
 
-      console.log('💾 Updating checklist:', { 
-        oldCompleted: selectedEvent.checklist[originalIndex].completed,
-        newCompleted: !selectedEvent.checklist[originalIndex].completed 
-      });
+      // Special debug for uncheck operations
+      if (currentEffectiveState === true) {
+        console.log('🔓 UNCHECK OPERATION DETECTED - item is currently checked (effective), trying to uncheck');
+        console.log('🔓 Before uncheck - current overrides:', checklistOverrides);
+      } else {
+        console.log('✅ CHECK OPERATION DETECTED - item is currently unchecked (effective), trying to check');
+      }
 
       // Immediately update the visual state (optimistic update)
       const taskKey = `${selectedEvent._id}-${originalIndex}`;
-      const newCompletedState = !selectedEvent.checklist[originalIndex].completed;
       console.log('⚡ Setting optimistic update:', { taskKey, newCompletedState });
       setChecklistOverrides(prev => ({
         ...prev,
         [taskKey]: newCompletedState
       }));
 
-      // Update the event with the new checklist
-      const response = await axios.put(`/api/events/${selectedEvent._id}`, {
+      // Debug: Log what we're actually sending for uncheck operations
+      const requestPayload = {
         ...selectedEvent,
         checklist: updatedChecklist
-      });
+      };
+      
+      if (currentEffectiveState === true) {
+        console.log('🔓 SENDING UNCHECK REQUEST:');
+        console.log('🔓 Updated item in request:', updatedChecklist[originalIndex]);
+        console.log('🔓 Full request checklist length:', updatedChecklist.length);
+      }
+
+      // Update the event with the new checklist
+      const response = await axios.put(`/api/events/${selectedEvent._id}`, requestPayload);
 
       console.log('✅ Server response:', response.data);
+
+      // Special debug for uncheck operations - check server response
+      if (currentEffectiveState === true) {
+        console.log('🔓 UNCHECK SERVER RESPONSE:');
+        console.log('🔓 Server returned checklist item:', response.data.checklist[originalIndex]);
+        console.log('🔓 Expected completed: false, Got completed:', response.data.checklist[originalIndex]?.completed);
+      }
 
       // Update local state - force a complete re-render by creating new objects
       const updatedEvent = { ...response.data };
@@ -400,15 +428,13 @@ const SavedEvents = ({ user }) => {
       console.log('🧹 Clearing override for:', taskKey);
       console.log('📊 Server returned completed state:', updatedEvent.checklist[originalIndex]?.completed);
       
-      // Add a small delay before clearing the override to ensure the component has updated
-      setTimeout(() => {
-        setChecklistOverrides(prev => {
-          const newOverrides = { ...prev };
-          delete newOverrides[taskKey];
-          console.log('🔄 Overrides after clearing (delayed):', newOverrides);
-          return newOverrides;
-        });
-      }, 100);
+      // Clear the override immediately since server state is now updated
+      setChecklistOverrides(prev => {
+        const newOverrides = { ...prev };
+        delete newOverrides[taskKey];
+        console.log('🔄 Overrides after clearing (immediate):', newOverrides);
+        return newOverrides;
+      });
 
       // Force a re-render
       setRenderKey(prev => prev + 1);
@@ -417,6 +443,14 @@ const SavedEvents = ({ user }) => {
     } catch (error) {
       console.error('❌ Failed to update checklist item:', error);
       console.error('Error details:', error.response?.data || error.message);
+      
+      // Clear the optimistic update on error
+      const taskKey = `${selectedEvent._id}-${originalIndex}`;
+      setChecklistOverrides(prev => {
+        const newOverrides = { ...prev };
+        delete newOverrides[taskKey];
+        return newOverrides;
+      });
     }
   };
 
@@ -611,7 +645,6 @@ const SavedEvents = ({ user }) => {
                                 <div 
                                   className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer"
                                   onClick={(e) => {
-                                    console.log('🖱️ CHECKBOX DIV CLICKED!');
                                     e.stopPropagation();
                                     
                                     // Find the original index for this item
@@ -620,10 +653,7 @@ const SavedEvents = ({ user }) => {
                                       (original.task === item.task && original.dueDate === item.dueDate)
                                     );
                                     
-                                    if (originalIdx === -1) {
-                                      console.warn('⚠️ Could not find original index for item:', item.task);
-                                      return;
-                                    }
+                                    if (originalIdx === -1) return;
                                     
                                     toggleChecklistItem(originalIdx, item);
                                   }}

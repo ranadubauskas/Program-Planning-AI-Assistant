@@ -531,27 +531,43 @@ app.put('/api/events/:id', async (req, res) => {
       return res.status(404).json({ error: 'Event not found' });
     }
 
-    // Handle checklist merging intelligently
+    // Handle checklist updates intelligently
     let updateData = { ...req.body };
-    if (req.body.checklist && Array.isArray(req.body.checklist) && req.body.checklist.length > 0) {
+    if (req.body.checklist && Array.isArray(req.body.checklist)) {
       const existingChecklist = existingEvent.checklist || [];
       
-      // Add new checklist items while preserving existing ones
-      // Only add items that don't already exist (based on task text similarity)
-      const newItems = req.body.checklist.filter(newItem => {
-        return !existingChecklist.some(existingItem => 
-          existingItem.task.toLowerCase().includes(newItem.task.toLowerCase().substring(0, 20)) ||
-          newItem.task.toLowerCase().includes(existingItem.task.toLowerCase().substring(0, 20))
-        );
-      });
+      // Check if this is a complete checklist replacement (like checkbox updates)
+      // or just new items being added
+      const isFullChecklistUpdate = req.body.checklist.length === existingChecklist.length;
       
-      if (newItems.length > 0) {
-        console.log(`➕ Adding ${newItems.length} new checklist items`);
-        updateData.checklist = [...existingChecklist, ...newItems];
+      if (isFullChecklistUpdate) {
+        // This is likely a checkbox update - use the provided checklist directly
+        console.log('🔄 Full checklist update (likely checkbox toggle)');
+        console.log('📊 Comparing states:');
+        req.body.checklist.forEach((newItem, index) => {
+          const oldItem = existingChecklist[index];
+          if (oldItem && newItem.completed !== oldItem.completed) {
+            console.log(`   Item ${index}: "${newItem.task}" changed from ${oldItem.completed} to ${newItem.completed}`);
+          }
+        });
+        updateData.checklist = req.body.checklist;
       } else {
-        // No new items to add, keep existing checklist
-        delete updateData.checklist;
-        console.log('✅ No new checklist items to add');
+        // This is adding new items - use the original merging logic
+        const newItems = req.body.checklist.filter(newItem => {
+          return !existingChecklist.some(existingItem => 
+            existingItem.task.toLowerCase().includes(newItem.task.toLowerCase().substring(0, 20)) ||
+            newItem.task.toLowerCase().includes(existingItem.task.toLowerCase().substring(0, 20))
+          );
+        });
+        
+        if (newItems.length > 0) {
+          console.log(`➕ Adding ${newItems.length} new checklist items`);
+          updateData.checklist = [...existingChecklist, ...newItems];
+        } else {
+          // No new items to add, keep existing checklist
+          delete updateData.checklist;
+          console.log('✅ No new checklist items to add');
+        }
       }
     }
 
