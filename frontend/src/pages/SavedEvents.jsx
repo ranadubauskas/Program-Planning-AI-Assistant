@@ -311,30 +311,52 @@ const SavedEvents = ({ user }) => {
   };
 
   const toggleChecklistItem = async (displayIndex, originalTask) => {
-    if (!selectedEvent) return;
+    console.log('🔄 Toggle checkbox clicked:', { displayIndex, originalTask });
+    
+    if (!selectedEvent) {
+      console.log('❌ No selected event');
+      return;
+    }
 
     // Don't allow toggling time headers
-    if (originalTask.isTimeHeader) return;
+    if (originalTask.isTimeHeader) {
+      console.log('❌ Cannot toggle time header');
+      return;
+    }
 
     try {
+      console.log('📋 Current checklist:', selectedEvent.checklist);
+      
       // Find the original index of the task in the raw checklist
       const originalIndex = selectedEvent.checklist.findIndex(item => 
         item._id === originalTask._id || 
         (item.task === originalTask.task && item.dueDate === originalTask.dueDate)
       );
 
-      if (originalIndex === -1) return;
+      console.log('🔍 Found original index:', originalIndex);
+      
+      if (originalIndex === -1) {
+        console.log('❌ Task not found in checklist');
+        return;
+      }
 
       // Create updated checklist with toggled item
       const updatedChecklist = selectedEvent.checklist.map((item, index) => 
         index === originalIndex ? { ...item, completed: !item.completed } : item
       );
 
+      console.log('💾 Updating checklist:', { 
+        oldCompleted: selectedEvent.checklist[originalIndex].completed,
+        newCompleted: !selectedEvent.checklist[originalIndex].completed 
+      });
+
       // Update the event with the new checklist
       const response = await axios.put(`/api/events/${selectedEvent._id}`, {
         ...selectedEvent,
         checklist: updatedChecklist
       });
+
+      console.log('✅ Server response:', response.data);
 
       // Update local state
       const updatedEvent = response.data;
@@ -345,8 +367,11 @@ const SavedEvents = ({ user }) => {
         event._id === updatedEvent._id ? updatedEvent : event
       ));
 
+      console.log('🎉 Checklist item toggled successfully');
+
     } catch (error) {
-      console.error('Failed to update checklist item:', error);
+      console.error('❌ Failed to update checklist item:', error);
+      console.error('Error details:', error.response?.data || error.message);
     }
   };
 
