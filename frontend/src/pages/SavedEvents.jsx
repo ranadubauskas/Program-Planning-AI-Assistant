@@ -602,41 +602,47 @@ const SavedEvents = ({ user }) => {
                           ) : (
                             // Regular checklist item
                             <div className="ml-4 border-l-2 border-gray-100">
-                              <div className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                              <div 
+                                className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
+                                onClick={(e) => {
+                                  console.log('🎯 Parent div clicked!', e.target);
+                                }}
+                              >
                                 {/* Checkbox for completion */}
-                                {(() => {
-                                  // Find the original index for this item
-                                  const originalIdx = selectedEvent.checklist.findIndex(original => 
-                                    original._id === item._id || 
-                                    (original.task === item.task && original.dueDate === item.dueDate)
-                                  );
-                                  
-                                  if (originalIdx === -1) {
-                                    console.warn('⚠️ Could not find original index for item:', item.task);
-                                  }
-                                  
-                                  const effectiveCompleted = getEffectiveCompletedState(item, originalIdx);
-                                  
-                                  return effectiveCompleted ? (
-                                    <CheckCircleIconSolid 
-                                      className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-green-600 hover:text-green-700 transition-colors" 
-                                      onClick={(e) => {
-                                        console.log('🖱️ CLICKED CheckCircleIconSolid');
-                                        e.stopPropagation();
-                                        toggleChecklistItem(originalIdx, item);
-                                      }}
-                                    />
-                                  ) : (
-                                    <CheckCircleIcon 
-                                      className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-gray-300 hover:text-gray-500 transition-colors" 
-                                      onClick={(e) => {
-                                        console.log('🖱️ CLICKED CheckCircleIcon');
-                                        e.stopPropagation();
-                                        toggleChecklistItem(originalIdx, item);
-                                      }}
-                                    />
-                                  );
-                                })()}
+                                <div 
+                                  className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer"
+                                  onClick={(e) => {
+                                    console.log('🖱️ CHECKBOX DIV CLICKED!');
+                                    e.stopPropagation();
+                                    
+                                    // Find the original index for this item
+                                    const originalIdx = selectedEvent.checklist.findIndex(original => 
+                                      original._id === item._id || 
+                                      (original.task === item.task && original.dueDate === item.dueDate)
+                                    );
+                                    
+                                    if (originalIdx === -1) {
+                                      console.warn('⚠️ Could not find original index for item:', item.task);
+                                      return;
+                                    }
+                                    
+                                    toggleChecklistItem(originalIdx, item);
+                                  }}
+                                >
+                                  {(() => {
+                                    const originalIdx = selectedEvent.checklist.findIndex(original => 
+                                      original._id === item._id || 
+                                      (original.task === item.task && original.dueDate === item.dueDate)
+                                    );
+                                    const effectiveCompleted = getEffectiveCompletedState(item, originalIdx);
+                                    
+                                    return effectiveCompleted ? (
+                                      <CheckCircleIconSolid className="h-full w-full text-green-600 hover:text-green-700 transition-colors" />
+                                    ) : (
+                                      <CheckCircleIcon className="h-full w-full text-gray-300 hover:text-gray-500 transition-colors" />
+                                    );
+                                  })()}
+                                </div>
                                 
                                 {/* Task content */}
                                 <div className="flex-1">
