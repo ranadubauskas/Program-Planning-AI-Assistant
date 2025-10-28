@@ -28,7 +28,16 @@ const SavedEvents = ({ user }) => {
   const getEffectiveCompletedState = (item, originalIndex) => {
     if (!selectedEvent) return item.completed;
     const taskKey = `${selectedEvent._id}-${originalIndex}`;
-    return checklistOverrides.hasOwnProperty(taskKey) ? checklistOverrides[taskKey] : item.completed;
+    const hasOverride = checklistOverrides.hasOwnProperty(taskKey);
+    const effectiveState = hasOverride ? checklistOverrides[taskKey] : item.completed;
+    console.log('🔍 Getting effective state:', { 
+      taskKey, 
+      hasOverride, 
+      overrideValue: checklistOverrides[taskKey], 
+      itemCompleted: item.completed, 
+      effectiveState 
+    });
+    return effectiveState;
   };
 
   // Function to organize checklist by time periods (for backward compatibility)
@@ -363,6 +372,7 @@ const SavedEvents = ({ user }) => {
       // Immediately update the visual state (optimistic update)
       const taskKey = `${selectedEvent._id}-${originalIndex}`;
       const newCompletedState = !selectedEvent.checklist[originalIndex].completed;
+      console.log('⚡ Setting optimistic update:', { taskKey, newCompletedState });
       setChecklistOverrides(prev => ({
         ...prev,
         [taskKey]: newCompletedState
@@ -387,9 +397,12 @@ const SavedEvents = ({ user }) => {
       ));
 
       // Clear the override since server update was successful
+      console.log('🧹 Clearing override for:', taskKey);
+      console.log('📊 Server returned completed state:', updatedEvent.checklist[originalIndex]?.completed);
       setChecklistOverrides(prev => {
         const newOverrides = { ...prev };
         delete newOverrides[taskKey];
+        console.log('🔄 Overrides after clearing:', newOverrides);
         return newOverrides;
       });
 
