@@ -610,12 +610,18 @@ const SavedEvents = ({ user }) => {
                                     original._id === item._id || 
                                     (original.task === item.task && original.dueDate === item.dueDate)
                                   );
+                                  
+                                  if (originalIdx === -1) {
+                                    console.warn('⚠️ Could not find original index for item:', item.task);
+                                  }
+                                  
                                   const effectiveCompleted = getEffectiveCompletedState(item, originalIdx);
                                   
                                   return effectiveCompleted ? (
                                     <CheckCircleIconSolid 
                                       className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-green-600 hover:text-green-700 transition-colors" 
                                       onClick={(e) => {
+                                        console.log('🖱️ CLICKED CheckCircleIconSolid');
                                         e.stopPropagation();
                                         toggleChecklistItem(originalIdx, item);
                                       }}
@@ -624,6 +630,7 @@ const SavedEvents = ({ user }) => {
                                     <CheckCircleIcon 
                                       className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-gray-300 hover:text-gray-500 transition-colors" 
                                       onClick={(e) => {
+                                        console.log('🖱️ CLICKED CheckCircleIcon');
                                         e.stopPropagation();
                                         toggleChecklistItem(originalIdx, item);
                                       }}
