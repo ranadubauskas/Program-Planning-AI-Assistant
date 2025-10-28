@@ -387,7 +387,6 @@ const SavedEvents = ({ user }) => {
       ));
 
       // Clear the override since server update was successful
-      const taskKey = `${selectedEvent._id}-${originalIndex}`;
       setChecklistOverrides(prev => {
         const newOverrides = { ...prev };
         delete newOverrides[taskKey];
