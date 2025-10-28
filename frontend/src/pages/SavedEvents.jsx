@@ -21,6 +21,7 @@ const SavedEvents = ({ user }) => {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expandedTasks, setExpandedTasks] = useState(new Set());
+  const [renderKey, setRenderKey] = useState(0);
 
   // Function to organize checklist by time periods (for backward compatibility)
   const organizeChecklistByTimePeriods = (checklist, eventDate) => {
@@ -358,15 +359,18 @@ const SavedEvents = ({ user }) => {
 
       console.log('✅ Server response:', response.data);
 
-      // Update local state
-      const updatedEvent = response.data;
+      // Update local state - force a complete re-render by creating new objects
+      const updatedEvent = { ...response.data };
+      console.log('🔄 Setting new selected event:', updatedEvent);
       setSelectedEvent(updatedEvent);
       
       // Update the events list
-      setEvents(events.map(event => 
-        event._id === updatedEvent._id ? updatedEvent : event
+      setEvents(prevEvents => prevEvents.map(event => 
+        event._id === updatedEvent._id ? { ...updatedEvent } : event
       ));
 
+      // Force a re-render
+      setRenderKey(prev => prev + 1);
       console.log('🎉 Checklist item toggled successfully');
 
     } catch (error) {
@@ -548,9 +552,9 @@ const SavedEvents = ({ user }) => {
                     <h2 className="text-lg font-semibold text-gray-900 mb-4">
                       Checklist ({completedCount}/{taskCount})
                     </h2>
-                    <div className="space-y-2">
+                    <div className="space-y-2" key={`checklist-${selectedEvent._id}-${selectedEvent.updatedAt || Date.now()}`}>
                       {organizedChecklist.map((item, index) => (
-                        <div key={index}>
+                        <div key={`${selectedEvent._id}-${index}-${item.task}-${item.completed}`}>
                           {item.isTimeHeader ? (
                             // Time period header
                             <div className="bg-vanderbilt-gold bg-opacity-10 border-l-4 border-vanderbilt-gold px-4 py-2 mt-6 first:mt-0">
