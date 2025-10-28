@@ -22,6 +22,14 @@ const SavedEvents = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [expandedTasks, setExpandedTasks] = useState(new Set());
   const [renderKey, setRenderKey] = useState(0);
+  const [checklistOverrides, setChecklistOverrides] = useState({});
+
+  // Get the effective completed state (considering overrides)
+  const getEffectiveCompletedState = (item, originalIndex) => {
+    if (!selectedEvent) return item.completed;
+    const taskKey = `${selectedEvent._id}-${originalIndex}`;
+    return checklistOverrides.hasOwnProperty(taskKey) ? checklistOverrides[taskKey] : item.completed;
+  };
 
   // Function to organize checklist by time periods (for backward compatibility)
   const organizeChecklistByTimePeriods = (checklist, eventDate) => {
@@ -273,9 +281,10 @@ const SavedEvents = ({ user }) => {
     }
   }, [location.state, events]);
 
-  // Clear expanded tasks when selectedEvent changes
+  // Clear expanded tasks and checklist overrides when selectedEvent changes
   useEffect(() => {
     setExpandedTasks(new Set());
+    setChecklistOverrides({});
   }, [selectedEvent]);
 
   const fetchEvents = async () => {
@@ -351,6 +360,14 @@ const SavedEvents = ({ user }) => {
         newCompleted: !selectedEvent.checklist[originalIndex].completed 
       });
 
+      // Immediately update the visual state (optimistic update)
+      const taskKey = `${selectedEvent._id}-${originalIndex}`;
+      const newCompletedState = !selectedEvent.checklist[originalIndex].completed;
+      setChecklistOverrides(prev => ({
+        ...prev,
+        [taskKey]: newCompletedState
+      }));
+
       // Update the event with the new checklist
       const response = await axios.put(`/api/events/${selectedEvent._id}`, {
         ...selectedEvent,
@@ -368,6 +385,14 @@ const SavedEvents = ({ user }) => {
       setEvents(prevEvents => prevEvents.map(event => 
         event._id === updatedEvent._id ? { ...updatedEvent } : event
       ));
+
+      // Clear the override since server update was successful
+      const taskKey = `${selectedEvent._id}-${originalIndex}`;
+      setChecklistOverrides(prev => {
+        const newOverrides = { ...prev };
+        delete newOverrides[taskKey];
+        return newOverrides;
+      });
 
       // Force a re-render
       setRenderKey(prev => prev + 1);
@@ -567,30 +592,49 @@ const SavedEvents = ({ user }) => {
                             <div className="ml-4 border-l-2 border-gray-100">
                               <div className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
                                 {/* Checkbox for completion */}
-                                {item.completed ? (
-                                  <CheckCircleIconSolid 
-                                    className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-green-600 hover:text-green-700 transition-colors" 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleChecklistItem(index, item);
-                                    }}
-                                  />
-                                ) : (
-                                  <CheckCircleIcon 
-                                    className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-gray-300 hover:text-gray-500 transition-colors" 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleChecklistItem(index, item);
-                                    }}
-                                  />
-                                )}
+                                {(() => {
+                                  // Find the original index for this item
+                                  const originalIdx = selectedEvent.checklist.findIndex(original => 
+                                    original._id === item._id || 
+                                    (original.task === item.task && original.dueDate === item.dueDate)
+                                  );
+                                  const effectiveCompleted = getEffectiveCompletedState(item, originalIdx);
+                                  
+                                  return effectiveCompleted ? (
+                                    <CheckCircleIconSolid 
+                                      className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-green-600 hover:text-green-700 transition-colors" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleChecklistItem(originalIdx, item);
+                                      }}
+                                    />
+                                  ) : (
+                                    <CheckCircleIcon 
+                                      className="h-5 w-5 mt-0.5 flex-shrink-0 cursor-pointer text-gray-300 hover:text-gray-500 transition-colors" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleChecklistItem(originalIdx, item);
+                                      }}
+                                    />
+                                  );
+                                })()}
                                 
                                 {/* Task content */}
                                 <div className="flex-1">
                                   <div className="flex items-center justify-between">
-                                    <p className={`transition-all ${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                                      {item.task}
-                                    </p>
+                                    {(() => {
+                                      const originalIdx = selectedEvent.checklist.findIndex(original => 
+                                        original._id === item._id || 
+                                        (original.task === item.task && original.dueDate === item.dueDate)
+                                      );
+                                      const effectiveCompleted = getEffectiveCompletedState(item, originalIdx);
+                                      
+                                      return (
+                                        <p className={`transition-all ${effectiveCompleted ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                                          {item.task}
+                                        </p>
+                                      );
+                                    })()}
                                     
                                     {/* Details toggle button */}
                                     <button
