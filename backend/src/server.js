@@ -3,6 +3,9 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import { connectDB } from './db.js'; 
+import crypto from 'crypto';
+import cron from 'node-cron';
+import nodemailer from 'nodemailer';
 import { chatWithAmplify } from './amplifyClient.js';
 import { User, ProgramPlan, Policy, Event } from './models.js';
 
@@ -599,6 +602,63 @@ app.delete('/api/events/:id', async (req, res) => {
   }
 });
 
+// --- Public Sharing ---
+// Create or return a public share link for an event
+app.post('/api/events/:id/share', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const event = await Event.findById(req.params.id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    if (!event.shareEnabled || !event.shareId) {
+      // Generate a URL-safe share token
+      const token = crypto.randomBytes(12).toString('base64url');
+      event.shareId = token;
+      event.shareEnabled = true;
+      event.shareCreatedAt = new Date();
+      await event.save();
+    }
+
+    // Frontend base URL for pretty public page
+    const appUrl = (process.env.PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const shareUrl = `${appUrl}/public/events/${event.shareId}`;
+    res.json({ shareUrl, shareId: event.shareId });
+  } catch (error) {
+    console.error('❌ Create share link error:', error);
+    res.status(500).json({ error: 'Failed to create share link' });
+  }
+});
+
+// Public endpoint to fetch a shared event by token (no auth required)
+async function getPublicEventHandler(req, res) {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const event = await Event.findOne({ shareId: req.params.shareId, shareEnabled: true }).lean();
+    if (!event) {
+      return res.status(404).json({ error: 'Shared event not found' });
+    }
+
+    // Return a safe, read-only view
+    const { _id, userId, __v, ...publicEvent } = event;
+    res.json({ ...publicEvent, id: event._id });
+  } catch (error) {
+    console.error('❌ Public event fetch error:', error);
+    res.status(500).json({ error: 'Failed to load shared event' });
+  }
+}
+
+// Public routes
+app.get('/public/events/:shareId', getPublicEventHandler);
+app.get('/api/public/events/:shareId', getPublicEventHandler);
+
 // Add global error handlers
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
@@ -621,3 +681,96 @@ try {
   console.error('❌ Failed to start server:', error);
   process.exit(1);
 }
+
+// --- Email notifications (5 days before due) ---
+const mailTransport = (() => {
+  if (!process.env.SMTP_HOST) {
+    console.log('📧 Email disabled (no SMTP_HOST). Will log emails to console.');
+    return null;
+  }
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: false,
+    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+  });
+})();
+
+function signUnsubscribe(userId, eventId) {
+  const secret = process.env.JWT_SECRET || 'change-me';
+  const data = `${userId}|${eventId}`;
+  return crypto.createHmac('sha256', secret).update(data).digest('base64url');
+}
+
+app.get('/api/notifications/unsubscribe', async (req, res) => {
+  try {
+    const { uid, eid, sig } = req.query;
+    if (!uid || !eid || !sig) return res.status(400).send('Invalid unsubscribe link.');
+    const expected = signUnsubscribe(String(uid), String(eid));
+    if (sig !== expected) return res.status(400).send('Invalid or expired unsubscribe signature.');
+
+    if (!mongoConnected) return res.status(503).send('Database unavailable.');
+    const event = await Event.findById(eid);
+    if (!event || String(event.userId) !== String(uid)) return res.status(404).send('Event not found.');
+
+    event.notifications = { ...(event.notifications || {}), emailOptIn: false };
+    await event.save();
+    res.send('You have been unsubscribed from email notifications for this event.');
+  } catch (e) {
+    console.error('Unsubscribe error:', e);
+    res.status(500).send('Failed to process unsubscribe.');
+  }
+});
+
+async function sendReminderEmail({ to, user, event, tasks }) {
+  const baseApp = (process.env.PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const unsubscribeSig = signUnsubscribe(String(user._id), String(event._id));
+  const unsubscribeUrl = `${(process.env.PUBLIC_API_URL || `http://localhost:${PORT}`).replace(/\/$/, '')}/api/notifications/unsubscribe?uid=${user._id}&eid=${event._id}&sig=${unsubscribeSig}`;
+
+  const subject = `Reminder: ${tasks.length} task(s) due in 5 days for ${event.title}`;
+  const lines = tasks.map(t => `• ${t.task}${t.dueDate ? ` (due ${new Date(t.dueDate).toLocaleDateString()})` : ''}`);
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height:1.5; color:#111">
+      <h2 style="margin:0 0 8px 0;">Upcoming tasks for: ${event.title}</h2>
+      <p>The following task(s) are due in 5 days:</p>
+      <ul>${lines.map(li => `<li>${li}</li>`).join('')}</ul>
+      <p>
+        View event: <a href="${baseApp}/events" target="_blank">Open Saved Events</a>
+      </p>
+      <hr />
+      <p style="font-size:12px;color:#666">To stop receiving these emails for this event, <a href="${unsubscribeUrl}">unsubscribe here</a>.</p>
+    </div>
+  `;
+
+  if (!mailTransport) {
+    console.log('📧 [DRY-RUN] To:', to, 'Subject:', subject, 'HTML length:', html.length);
+    return;
+  }
+  await mailTransport.sendMail({ from: process.env.SMTP_FROM || 'no-reply@program-planning.local', to, subject, html });
+}
+
+// Run every day at 08:00 server time
+cron.schedule('0 8 * * *', async () => {
+  if (!mongoConnected) return;
+  try {
+    const now = new Date();
+    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5);
+    const start = new Date(target); start.setHours(0,0,0,0);
+    const end = new Date(target); end.setHours(23,59,59,999);
+
+    const events = await Event.find({ 'notifications.emailOptIn': { $ne: false } }).lean();
+    for (const ev of events) {
+      const dueTasks = (ev.checklist || []).filter(it => !it.isTimeHeader && !it.completed && it.dueDate && (new Date(it.dueDate) >= start && new Date(it.dueDate) <= end));
+      if (!dueTasks.length) continue;
+
+      // Load user email
+      let user = null;
+      try { user = await User.findById(ev.userId).lean(); } catch {}
+      if (!user?.email) continue;
+
+      await sendReminderEmail({ to: user.email, user, event: ev, tasks: dueTasks });
+    }
+  } catch (e) {
+    console.error('Cron email job error:', e);
+  }
+});

@@ -8,20 +8,13 @@ Rana Dubauskas & Blanche Stora
 ## Staff Fellow
 EJ Edney
 
-## PRD
-[Link](.PRD.docx)
 
 ## Features
 
-
-<img width="364" height="343" alt="Screenshot 2025-10-14 at 1 36 41 PM" src="https://github.com/user-attachments/assets/06bd51db-60bf-403b-8bee-c8c43ebe1cf7" />
-<img width="891" height="422" alt="Screenshot 2025-10-14 at 1 36 26 PM" src="https://github.com/user-attachments/assets/4c7eba49-f585-43bf-932d-3e70a550a006" />
-<img width="1057" height="801" alt="Screenshot 2025-10-14 at 1 36 13 PM" src="https://github.com/user-attachments/assets/8f373997-97ad-4a86-9f25-1674b067a147" />
-
-
-
 - **AI-Powered Chat Interface**: Get personalized guidance for program planning
 - **Interactive Checklists**: Track your progress with automatically generated task lists
+- **Email Notifications**: Stay on track with planning with email notification reminders
+- **Checklist Sharing**: Share plan with multiple people to collaborate  
 - **Policy Integration**: Access relevant policies with tiered warnings and citations
 - **Role-Based Guidance**: Different guidance for students vs. staff
 - **Data Persistence**: Save and continue your planning sessions

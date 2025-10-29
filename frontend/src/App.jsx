@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Chat from './pages/Chat';
 import PlanDetails from './pages/PlanDetails';
 import SavedEvents from './pages/SavedEvents';
+import PublicEvent from './pages/PublicEvent';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -89,6 +90,10 @@ function App() {
             element={
               user ? <SavedEvents user={user} /> : <Navigate to="/login" />
             } 
+          />
+          <Route 
+            path="/public/events/:shareId" 
+            element={<PublicEvent />} 
           />
           <Route 
             path="/" 

@@ -170,6 +170,16 @@ const EventSchema = new mongoose.Schema({
     conversationContext: [String] // Array of related message contents
   },
   
+  // Notifications
+  notifications: {
+    emailOptIn: { type: Boolean, default: true },
+  },
+ 
+  // Public sharing
+  shareId: { type: String, unique: true, sparse: true },
+  shareEnabled: { type: Boolean, default: false },
+  shareCreatedAt: { type: Date },
+  
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -179,6 +189,9 @@ EventSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   next();
 });
+
+// Helpful index for public lookups
+EventSchema.index({ shareId: 1 }, { unique: true, sparse: true });
 
 export const User = mongoose.model('User', UserSchema);
 export const ProgramPlan = mongoose.model('ProgramPlan', ProgramPlanSchema);

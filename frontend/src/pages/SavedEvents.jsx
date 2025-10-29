@@ -23,6 +23,7 @@ const SavedEvents = ({ user }) => {
   const [expandedTasks, setExpandedTasks] = useState(new Set());
   const [renderKey, setRenderKey] = useState(0);
   const [checklistOverrides, setChecklistOverrides] = useState({});
+  const [shareModal, setShareModal] = useState({ open: false, link: '' });
 
   // Get the effective completed state (considering overrides)
   const getEffectiveCompletedState = (item, originalIndex) => {
@@ -329,6 +330,17 @@ const SavedEvents = ({ user }) => {
     }
   };
 
+  const shareEvent = async (event) => {
+    try {
+      const resp = await axios.post(`/api/events/${event._id}/share`);
+      const { shareUrl } = resp.data;
+      setShareModal({ open: true, link: shareUrl });
+    } catch (error) {
+      console.error('Error creating share link:', error);
+      alert('Failed to create share link. Please try again.');
+    }
+  };
+
   const toggleChecklistItem = async (displayIndex, originalTask) => {
     console.log('🔄 Toggle checkbox clicked:', { displayIndex, originalTask });
     
@@ -523,8 +535,7 @@ const SavedEvents = ({ user }) => {
                 {events.map((event) => (
                   <div
                     key={event._id}
-                    onClick={() => setSelectedEvent(event)}
-                    className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                    className={`p-4 rounded-lg border transition-all ${
                       selectedEvent?._id === event._id
                         ? 'border-vanderbilt-gold bg-yellow-50'
                         : 'border-gray-200 hover:border-gray-300 bg-white'
@@ -532,7 +543,7 @@ const SavedEvents = ({ user }) => {
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 cursor-pointer" onClick={() => setSelectedEvent(event)}>
                           {getCategoryIcon(event.category)}
                           <h3 className="font-medium text-gray-900 truncate">
                             {event.title}
@@ -550,6 +561,21 @@ const SavedEvents = ({ user }) => {
                             {event.checklist?.filter(item => !item.isTimeHeader).length || 0} tasks
                           </span>
                         </div>
+                      </div>
+                      <div className="ml-3 flex flex-col items-end space-y-2">
+                        <button
+                          onClick={() => shareEvent(event)}
+                          className="px-3 py-1 text-xs rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+                          title="Copy shareable link"
+                        >
+                          Share
+                        </button>
+                        <button
+                          onClick={() => setSelectedEvent(event)}
+                          className="px-3 py-1 text-xs rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+                        >
+                          View
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -584,6 +610,27 @@ const SavedEvents = ({ user }) => {
                       )}
                     </div>
                     
+                    {/* Notifications toggle */}
+                    <div className="mt-4 flex items-center space-x-2">
+                      <label className="text-sm text-gray-700">Email reminders (5 days before due):</label>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const response = await axios.put(`/api/events/${selectedEvent._id}`, {
+                              notifications: { emailOptIn: !(selectedEvent.notifications?.emailOptIn !== false) }
+                            });
+                            setSelectedEvent(response.data);
+                            setEvents(prev => prev.map(e => e._id === response.data._id ? response.data : e));
+                          } catch (e) {
+                            alert('Failed to update notification preference');
+                          }
+                        }}
+                        className={`px-3 py-1 text-sm rounded-md border ${selectedEvent.notifications?.emailOptIn !== false ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-700 border-gray-200'}`}
+                      >
+                        {selectedEvent.notifications?.emailOptIn !== false ? 'On' : 'Off'}
+                      </button>
+                    </div>
+
                     {/* Continue Chat Button */}
                     <div className="mt-4">
                       <button
@@ -844,6 +891,47 @@ const SavedEvents = ({ user }) => {
           )}
         </div>
       </div>
+
+      {/* Share Modal */}
+      {shareModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-900">Share this event</h3>
+            <p className="text-sm text-gray-600 mt-1">Anyone with this link can view the event.</p>
+            <div className="mt-4">
+              <input
+                type="text"
+                readOnly
+                value={shareModal.link}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-800 bg-gray-50"
+                onFocus={(e) => e.target.select()}
+              />
+              <div className="mt-3 flex items-center justify-end space-x-2">
+                <button
+                  onClick={async () => { try { await navigator.clipboard.writeText(shareModal.link); } catch {} }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md"
+                >
+                  Copy link
+                </button>
+                <a
+                  href={shareModal.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-medium rounded-md"
+                >
+                  Open link
+                </a>
+                <button
+                  onClick={() => setShareModal({ open: false, link: '' })}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
