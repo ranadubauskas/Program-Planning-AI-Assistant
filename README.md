@@ -45,22 +45,25 @@ EJ Edney
 
 2. **Set up environment variables**:
    
-**backend/.env**
- ```bash
-PORT=3001
-DATABASE_URL=mongodb://127.0.0.1:27017/program-planning
+   **backend/.env**
+   ```bash
+   PORT=3001
+   DATABASE_URL=mongodb+srv://ranadubauskas:[Password]@cluster0.rkcmykg.mongodb.net/program-planning?appName=Cluster0
+   MONGODB_URI=mongodb+srv://ranadubauskas:[Password]@cluster0.rkcmykg.mongodb.net/program-planning?appName=Cluster0
+   PUBLIC_APP_URL=http://localhost:3000
 
-USE_AMPLIFY=true
-AMPLIFY_BASE_URL=https://prod-api.vanderbilt.ai
-AMPLIFY_AUTH_SCHEME=bearer
-AMPLIFY_API_KEY=<YOUR_REAL_AMPLIFY_KEY>
-AMPLIFY_MODEL=gpt-4o-mini
-JWT_SECRET=<generate-a-strong-random-string>
- ```
+   USE_AMPLIFY=true
+   AMPLIFY_BASE_URL=https://prod-api.vanderbilt.ai
+   AMPLIFY_AUTH_SCHEME=bearer
+   AMPLIFY_API_KEY=<YOUR_REAL_AMPLIFY_KEY>
+   AMPLIFY_MODEL=gpt-4.1-mini
+   AMPLIFY_PATH=/chat
+   JWT_SECRET=<generate-a-strong-random-string>
+   ```
 
-**How to generate JWT_SECRET:**
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   **How to generate JWT_SECRET:**
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
    ```
 
 3. **Start MongoDB** (if using local installation):
