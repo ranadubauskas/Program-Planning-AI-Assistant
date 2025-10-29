@@ -562,19 +562,19 @@ const SavedEvents = ({ user }) => {
                           </span>
                         </div>
                       </div>
-                      <div className="ml-3 flex flex-col items-end space-y-2">
+                        <div className="ml-3 flex flex-col items-end space-y-2">
+                        <button
+                          onClick={() => setSelectedEvent(event)}
+                          className="px-3 py-1 text-xs rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+                        >
+                          View
+                        </button>
                         <button
                           onClick={() => shareEvent(event)}
                           className="px-3 py-1 text-xs rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
                           title="Copy shareable link"
                         >
                           Share
-                        </button>
-                        <button
-                          onClick={() => setSelectedEvent(event)}
-                          className="px-3 py-1 text-xs rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
-                        >
-                          View
                         </button>
                       </div>
                     </div>
