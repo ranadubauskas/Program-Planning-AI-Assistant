@@ -71,10 +71,9 @@ const SavedEvents = ({ user }) => {
       return checklist;
     }
 
-    // If checklist already has time headers, return as is
-    if (checklist.some(item => item.isTimeHeader)) {
-      return checklist;
-    }
+    // If checklist already has time headers, we need to reorganize to add date ranges
+    // Remove existing time headers and reorganize with new ones that include dates
+    const tasksOnly = checklist.filter(item => !item.isTimeHeader);
 
     const eventDateTime = new Date(eventDate);
     
@@ -90,7 +89,7 @@ const SavedEvents = ({ user }) => {
       'After event': []
     };
     
-    checklist.forEach(task => {
+    tasksOnly.forEach(task => {
       if (!task.dueDate) {
         // Tasks without due dates go to the earliest applicable period
         timePeriods['3-6 months out'].push(task);
