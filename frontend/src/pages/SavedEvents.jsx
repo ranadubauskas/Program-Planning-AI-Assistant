@@ -43,6 +43,28 @@ const SavedEvents = ({ user }) => {
     return effectiveState;
   };
 
+  // Helper function to calculate date ranges for time periods
+  const calculateDateRange = (eventDateTime, daysBack, maxDaysBack = null) => {
+    const startDate = new Date(eventDateTime);
+    const endDate = new Date(eventDateTime);
+    
+    startDate.setDate(startDate.getDate() - (maxDaysBack || daysBack));
+    endDate.setDate(endDate.getDate() - daysBack);
+    
+    const formatDate = (date) => {
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric'
+      });
+    };
+    
+    if (maxDaysBack && maxDaysBack !== daysBack) {
+      return `${formatDate(startDate)} - ${formatDate(endDate)}`;
+    } else {
+      return formatDate(endDate);
+    }
+  };
+
   // Function to organize checklist by time periods (for backward compatibility)
   const organizeChecklistByTimePeriods = (checklist, eventDate) => {
     if (!eventDate || !checklist || checklist.length === 0) {
@@ -103,9 +125,45 @@ const SavedEvents = ({ user }) => {
     
     Object.entries(timePeriods).forEach(([period, tasks]) => {
       if (tasks.length > 0) {
-        // Add time period header
+        // Calculate date range for this period
+        let dateRange = '';
+        let periodText = period.toUpperCase();
+        
+        switch (period) {
+          case '6+ months out':
+            dateRange = calculateDateRange(eventDateTime, 180, 365);
+            break;
+          case '3-6 months out':
+            dateRange = calculateDateRange(eventDateTime, 90, 180);
+            break;
+          case '1-3 months out':
+            dateRange = calculateDateRange(eventDateTime, 30, 90);
+            break;
+          case '2-4 weeks out':
+            dateRange = calculateDateRange(eventDateTime, 14, 28);
+            break;
+          case '1-2 weeks out':
+            dateRange = calculateDateRange(eventDateTime, 7, 14);
+            break;
+          case 'Week of event':
+            dateRange = calculateDateRange(eventDateTime, 1, 7);
+            break;
+          case 'Day of event':
+            dateRange = calculateDateRange(eventDateTime, 0);
+            break;
+          case 'After event':
+            periodText = 'AFTER EVENT';
+            dateRange = 'Post-event tasks';
+            break;
+        }
+        
+        // Add time period header with date range
+        const headerText = dateRange && dateRange !== 'Post-event tasks' 
+          ? `--- ${periodText} (${dateRange}) ---`
+          : `--- ${periodText} ---`;
+          
         organizedChecklist.push({
-          task: `--- ${period.toUpperCase()} ---`,
+          task: headerText,
           isTimeHeader: true,
           timePeriod: period,
           dueDate: null,
