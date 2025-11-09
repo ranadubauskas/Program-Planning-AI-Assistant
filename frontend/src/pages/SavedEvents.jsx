@@ -579,7 +579,7 @@ const SavedEvents = ({ user }) => {
                     }`}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0 pr-3">
                         <div className="flex items-center space-x-2 cursor-pointer" onClick={() => setSelectedEvent(event)}>
                           {getCategoryIcon(event.category)}
                           <h3 className="font-medium text-gray-900 truncate">
@@ -599,7 +599,7 @@ const SavedEvents = ({ user }) => {
                           </span>
                         </div>
                       </div>
-                        <div className="ml-3 flex flex-col items-end space-y-2">
+                        <div className="flex flex-col items-end space-y-2 flex-shrink-0" style={{minWidth: '100px'}}>
                         <button
                           onClick={() => setSelectedEvent(event)}
                           className="px-3 py-1 text-xs rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
