@@ -180,18 +180,52 @@ const EventSchema = new mongoose.Schema({
   shareEnabled: { type: Boolean, default: false },
   shareCreatedAt: { type: Date },
   
+  // Collaboration features
+  collaborationEnabled: { type: Boolean, default: false },
+  collaborationId: { type: String, unique: true, sparse: true }, // Separate ID for collaboration access
+  collaborators: [{
+    userId: { type: mongoose.Schema.Types.Mixed }, // Allow both ObjectId and string for temp users
+    email: String,
+    firstName: String,
+    lastName: String,
+    permission: { type: String, enum: ['view', 'edit', 'admin'], default: 'edit' },
+    addedAt: { type: Date, default: Date.now },
+    addedBy: { type: mongoose.Schema.Types.Mixed }, // User who added this collaborator
+    lastActive: { type: Date, default: Date.now }
+  }],
+  owner: { type: mongoose.Schema.Types.Mixed }, // Original creator of the event (set automatically)
+  
+  // Activity tracking for collaboration
+  activityLog: [{
+    userId: { type: mongoose.Schema.Types.Mixed },
+    userName: String,
+    action: { type: String, enum: ['created', 'updated', 'completed_task', 'uncompleted_task', 'added_collaborator', 'removed_collaborator', 'joined'] },
+    description: String,
+    timestamp: { type: Date, default: Date.now },
+    metadata: { type: mongoose.Schema.Types.Mixed } // Store additional action data
+  }],
+  
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
-// Update the updatedAt field on save
+// Update the updatedAt field on save and set owner if not set
 EventSchema.pre('save', function(next) {
   this.updatedAt = new Date();
+  
+  // Set owner to userId if not already set (for backward compatibility)
+  if (!this.owner && this.userId) {
+    this.owner = this.userId;
+  }
+  
   next();
 });
 
-// Helpful index for public lookups
+// Helpful indexes for public lookups and collaboration
 EventSchema.index({ shareId: 1 }, { unique: true, sparse: true });
+EventSchema.index({ collaborationId: 1 }, { unique: true, sparse: true });
+EventSchema.index({ 'collaborators.userId': 1 });
+EventSchema.index({ owner: 1 });
 
 export const User = mongoose.model('User', UserSchema);
 export const ProgramPlan = mongoose.model('ProgramPlan', ProgramPlanSchema);

@@ -7,6 +7,7 @@ import Chat from './pages/Chat';
 import PlanDetails from './pages/PlanDetails';
 import SavedEvents from './pages/SavedEvents';
 import PublicEvent from './pages/PublicEvent';
+import CollaborativeEvent from './pages/CollaborativeEvent';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -94,6 +95,10 @@ function App() {
           <Route 
             path="/public/events/:shareId" 
             element={<PublicEvent />} 
+          />
+          <Route 
+            path="/collaborate/:collaborationId" 
+            element={<CollaborativeEvent user={user} />} 
           />
           <Route 
             path="/" 

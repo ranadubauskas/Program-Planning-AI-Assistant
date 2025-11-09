@@ -659,6 +659,384 @@ async function getPublicEventHandler(req, res) {
 app.get('/public/events/:shareId', getPublicEventHandler);
 app.get('/api/public/events/:shareId', getPublicEventHandler);
 
+// --- Collaboration API ---
+// Enable collaboration for an event
+app.post('/api/events/:id/collaboration/enable', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const event = await Event.findById(req.params.id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    // TODO: Add proper authentication to verify ownership
+    // For now, assume the request is from the owner
+    
+    if (!event.collaborationEnabled) {
+      // Generate a URL-safe collaboration token
+      const token = crypto.randomBytes(16).toString('base64url');
+      event.collaborationId = token;
+      event.collaborationEnabled = true;
+      
+      // Add activity log entry
+      if (!event.activityLog) event.activityLog = [];
+      event.activityLog.push({
+        userId: event.userId,
+        userName: 'Event Owner', // TODO: Get from authenticated user
+        action: 'created',
+        description: 'Enabled collaboration for this event',
+        timestamp: new Date()
+      });
+      
+      await event.save();
+    }
+
+    // Return collaboration URL
+    const appUrl = (process.env.PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const collaborationUrl = `${appUrl}/collaborate/${event.collaborationId}`;
+    res.json({ collaborationUrl, collaborationId: event.collaborationId });
+  } catch (error) {
+    console.error('❌ Enable collaboration error:', error);
+    res.status(500).json({ error: 'Failed to enable collaboration' });
+  }
+});
+
+// Disable collaboration for an event
+app.post('/api/events/:id/collaboration/disable', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const event = await Event.findById(req.params.id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    // TODO: Add proper authentication to verify ownership
+    event.collaborationEnabled = false;
+    event.collaborationId = null;
+    event.collaborators = [];
+    
+    // Add activity log entry
+    if (!event.activityLog) event.activityLog = [];
+    event.activityLog.push({
+      userId: event.userId,
+      userName: 'Event Owner', // TODO: Get from authenticated user
+      action: 'updated',
+      description: 'Disabled collaboration for this event',
+      timestamp: new Date()
+    });
+    
+    await event.save();
+    res.json({ message: 'Collaboration disabled successfully' });
+  } catch (error) {
+    console.error('❌ Disable collaboration error:', error);
+    res.status(500).json({ error: 'Failed to disable collaboration' });
+  }
+});
+
+// Get collaborative event by collaborationId (for collaborators)
+app.get('/api/collaborate/:collaborationId', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const event = await Event.findOne({ 
+      collaborationId: req.params.collaborationId, 
+      collaborationEnabled: true 
+    }).lean();
+    
+    if (!event) {
+      return res.status(404).json({ error: 'Collaborative event not found or collaboration disabled' });
+    }
+
+    // Return full event data for collaboration (not just public fields)
+    res.json(event);
+  } catch (error) {
+    console.error('❌ Get collaborative event error:', error);
+    res.status(500).json({ error: 'Failed to load collaborative event' });
+  }
+});
+
+// Add collaborator to event
+app.post('/api/events/:id/collaborators', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const { email, firstName, lastName, userId, permission = 'edit' } = req.body;
+    
+    if (!email || !firstName || !lastName) {
+      return res.status(400).json({ error: 'Email, first name, and last name are required' });
+    }
+
+    const event = await Event.findById(req.params.id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    if (!event.collaborationEnabled) {
+      return res.status(400).json({ error: 'Collaboration is not enabled for this event' });
+    }
+
+    // Check if collaborator already exists
+    const existingCollaborator = event.collaborators.find(c => c.email === email);
+    if (existingCollaborator) {
+      return res.status(400).json({ error: 'User is already a collaborator' });
+    }
+
+    // Add collaborator
+    const collaborator = {
+      userId: userId || null,
+      email: email,
+      firstName: firstName,
+      lastName: lastName,
+      permission: permission,
+      addedAt: new Date(),
+      addedBy: event.userId, // TODO: Get from authenticated user
+      lastActive: new Date()
+    };
+
+    event.collaborators.push(collaborator);
+    
+    // Add activity log entry
+    if (!event.activityLog) event.activityLog = [];
+    event.activityLog.push({
+      userId: event.userId,
+      userName: 'Event Owner', // TODO: Get from authenticated user
+      action: 'added_collaborator',
+      description: `Added ${firstName} ${lastName} as a collaborator`,
+      timestamp: new Date(),
+      metadata: { email, permission }
+    });
+
+    await event.save();
+    res.json({ message: 'Collaborator added successfully', collaborator });
+  } catch (error) {
+    console.error('❌ Add collaborator error:', error);
+    res.status(500).json({ error: 'Failed to add collaborator' });
+  }
+});
+
+// Remove collaborator from event
+app.delete('/api/events/:id/collaborators/:collaboratorId', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const event = await Event.findById(req.params.id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    const collaboratorIndex = event.collaborators.findIndex(c => c._id.toString() === req.params.collaboratorId);
+    if (collaboratorIndex === -1) {
+      return res.status(404).json({ error: 'Collaborator not found' });
+    }
+
+    const removedCollaborator = event.collaborators[collaboratorIndex];
+    event.collaborators.splice(collaboratorIndex, 1);
+    
+    // Add activity log entry
+    if (!event.activityLog) event.activityLog = [];
+    event.activityLog.push({
+      userId: event.userId,
+      userName: 'Event Owner', // TODO: Get from authenticated user
+      action: 'removed_collaborator',
+      description: `Removed ${removedCollaborator.firstName} ${removedCollaborator.lastName} as a collaborator`,
+      timestamp: new Date(),
+      metadata: { email: removedCollaborator.email }
+    });
+
+    await event.save();
+    res.json({ message: 'Collaborator removed successfully' });
+  } catch (error) {
+    console.error('❌ Remove collaborator error:', error);
+    res.status(500).json({ error: 'Failed to remove collaborator' });
+  }
+});
+
+// Update collaborative event (with permission checking)
+app.put('/api/collaborate/:collaborationId', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const { userId, userName, ...updateData } = req.body;
+    
+    const event = await Event.findOne({ 
+      collaborationId: req.params.collaborationId, 
+      collaborationEnabled: true 
+    });
+    
+    if (!event) {
+      return res.status(404).json({ error: 'Collaborative event not found' });
+    }
+
+    // Check permissions (owner or collaborator with edit permission)
+    const isOwner = String(event.owner || event.userId) === String(userId);
+    const collaborator = event.collaborators.find(c => String(c.userId) === String(userId));
+    const hasEditPermission = isOwner || (collaborator && ['edit', 'admin'].includes(collaborator.permission));
+    
+    if (!hasEditPermission) {
+      return res.status(403).json({ error: 'Insufficient permissions to edit this event' });
+    }
+
+    // Update collaborator's last active time
+    if (collaborator) {
+      collaborator.lastActive = new Date();
+    }
+
+    // Handle checklist updates with activity tracking
+    if (updateData.checklist && Array.isArray(updateData.checklist)) {
+      const existingChecklist = event.checklist || [];
+      
+      // Check for checkbox changes to log activity
+      updateData.checklist.forEach((newItem, index) => {
+        const oldItem = existingChecklist[index];
+        if (oldItem && newItem.completed !== oldItem.completed) {
+          if (!event.activityLog) event.activityLog = [];
+          event.activityLog.push({
+            userId: userId,
+            userName: userName || 'Unknown User',
+            action: newItem.completed ? 'completed_task' : 'uncompleted_task',
+            description: `${newItem.completed ? 'Completed' : 'Uncompleted'} task: ${newItem.task}`,
+            timestamp: new Date(),
+            metadata: { taskIndex: index, taskId: newItem._id }
+          });
+        }
+      });
+    }
+
+    // Apply updates
+    Object.assign(event, updateData);
+    event.updatedAt = new Date();
+    
+    // Log general update activity (if not just checkbox changes)
+    const isChecklistOnlyUpdate = Object.keys(updateData).length === 1 && updateData.checklist;
+    if (!isChecklistOnlyUpdate) {
+      if (!event.activityLog) event.activityLog = [];
+      event.activityLog.push({
+        userId: userId,
+        userName: userName || 'Unknown User',
+        action: 'updated',
+        description: 'Updated event details',
+        timestamp: new Date(),
+        metadata: { updatedFields: Object.keys(updateData) }
+      });
+    }
+
+    await event.save();
+    res.json(event);
+  } catch (error) {
+    console.error('❌ Update collaborative event error:', error);
+    res.status(500).json({ error: 'Failed to update collaborative event' });
+  }
+});
+
+// Join collaborative event (for users clicking collaboration link)
+app.post('/api/collaborate/:collaborationId/join', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const { userId, email, firstName, lastName } = req.body;
+    
+    if (!email || !firstName || !lastName) {
+      return res.status(400).json({ error: 'Email, first name, and last name are required' });
+    }
+
+    const event = await Event.findOne({ 
+      collaborationId: req.params.collaborationId, 
+      collaborationEnabled: true 
+    });
+    
+    if (!event) {
+      return res.status(404).json({ error: 'Collaborative event not found' });
+    }
+
+    // Check if user is already a collaborator
+    const existingCollaborator = event.collaborators.find(c => 
+      c.email === email || (userId && String(c.userId) === String(userId))
+    );
+    
+    if (!existingCollaborator) {
+      // Add as new collaborator with default edit permission
+      const collaborator = {
+        userId: userId || null,
+        email: email,
+        firstName: firstName,
+        lastName: lastName,
+        permission: 'edit',
+        addedAt: new Date(),
+        addedBy: null, // Self-joined
+        lastActive: new Date()
+      };
+
+      event.collaborators.push(collaborator);
+      
+      // Add activity log entry
+      if (!event.activityLog) event.activityLog = [];
+      event.activityLog.push({
+        userId: userId,
+        userName: `${firstName} ${lastName}`,
+        action: 'joined',
+        description: `${firstName} ${lastName} joined as a collaborator`,
+        timestamp: new Date(),
+        metadata: { email }
+      });
+
+      await event.save();
+    } else {
+      // Update existing collaborator's last active time
+      existingCollaborator.lastActive = new Date();
+      await event.save();
+    }
+
+    res.json({ message: 'Successfully joined collaborative event', event });
+  } catch (error) {
+    console.error('❌ Join collaborative event error:', error);
+    res.status(500).json({ error: 'Failed to join collaborative event' });
+  }
+});
+
+// Get activity log for collaborative event
+app.get('/api/collaborate/:collaborationId/activity', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const event = await Event.findOne({ 
+      collaborationId: req.params.collaborationId, 
+      collaborationEnabled: true 
+    }).select('activityLog').lean();
+    
+    if (!event) {
+      return res.status(404).json({ error: 'Collaborative event not found' });
+    }
+
+    // Sort activity log by timestamp (newest first) and limit to last 50 entries
+    const activityLog = (event.activityLog || [])
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, 50);
+
+    res.json({ activityLog });
+  } catch (error) {
+    console.error('❌ Get activity log error:', error);
+    res.status(500).json({ error: 'Failed to get activity log' });
+  }
+});
+
 // Add global error handlers
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);

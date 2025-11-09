@@ -9,7 +9,8 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   InformationCircleIcon,
-  ChatBubbleLeftRightIcon
+  ChatBubbleLeftRightIcon,
+  UsersIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 
@@ -24,6 +25,7 @@ const SavedEvents = ({ user }) => {
   const [renderKey, setRenderKey] = useState(0);
   const [checklistOverrides, setChecklistOverrides] = useState({});
   const [shareModal, setShareModal] = useState({ open: false, link: '' });
+  const [collaborationModal, setCollaborationModal] = useState({ open: false, link: '', eventId: null });
 
   // Get the effective completed state (considering overrides)
   const getEffectiveCompletedState = (item, originalIndex) => {
@@ -341,6 +343,41 @@ const SavedEvents = ({ user }) => {
     }
   };
 
+  const enableCollaboration = async (event) => {
+    try {
+      const resp = await axios.post(`/api/events/${event._id}/collaboration/enable`);
+      const { collaborationUrl } = resp.data;
+      setCollaborationModal({ open: true, link: collaborationUrl, eventId: event._id });
+      // Refresh the event to get updated collaboration status
+      fetchEvents();
+    } catch (error) {
+      console.error('Error enabling collaboration:', error);
+      alert('Failed to enable collaboration. Please try again.');
+    }
+  };
+
+  const disableCollaboration = async (event) => {
+    if (!window.confirm('Are you sure you want to disable collaboration? This will remove all collaborators and their access.')) {
+      return;
+    }
+    
+    try {
+      await axios.post(`/api/events/${event._id}/collaboration/disable`);
+      alert('Collaboration has been disabled for this event.');
+      // Refresh the event to get updated collaboration status
+      fetchEvents();
+    } catch (error) {
+      console.error('Error disabling collaboration:', error);
+      alert('Failed to disable collaboration. Please try again.');
+    }
+  };
+
+  const openCollaborativeEvent = (event) => {
+    if (event.collaborationId) {
+      window.open(`/collaborate/${event.collaborationId}`, '_blank');
+    }
+  };
+
   const toggleChecklistItem = async (displayIndex, originalTask) => {
     console.log('🔄 Toggle checkbox clicked:', { displayIndex, originalTask });
     
@@ -576,6 +613,34 @@ const SavedEvents = ({ user }) => {
                         >
                           Share
                         </button>
+                        {event.collaborationEnabled ? (
+                          <div className="flex flex-col space-y-1">
+                            <button
+                              onClick={() => openCollaborativeEvent(event)}
+                              className="px-3 py-1 text-xs rounded-md border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100"
+                              title="Open collaborative editing"
+                            >
+                              <UsersIcon className="h-3 w-3 inline mr-1" />
+                              Collaborate
+                            </button>
+                            <button
+                              onClick={() => disableCollaboration(event)}
+                              className="px-3 py-1 text-xs rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-100"
+                              title="Disable collaboration"
+                            >
+                              Disable
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => enableCollaboration(event)}
+                            className="px-3 py-1 text-xs rounded-md border border-green-300 text-green-700 bg-green-50 hover:bg-green-100"
+                            title="Enable collaboration"
+                          >
+                            <UsersIcon className="h-3 w-3 inline mr-1" />
+                            Collaborate
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -923,6 +988,54 @@ const SavedEvents = ({ user }) => {
                 </a>
                 <button
                   onClick={() => setShareModal({ open: false, link: '' })}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Collaboration Modal */}
+      {collaborationModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-900">Collaboration Enabled!</h3>
+            <p className="text-sm text-gray-600 mt-1">Anyone with this link can edit this event collaboratively.</p>
+            <div className="mt-4">
+              <input
+                type="text"
+                readOnly
+                value={collaborationModal.link}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-800 bg-gray-50"
+                onFocus={(e) => e.target.select()}
+              />
+              <div className="mt-3 flex items-center justify-end space-x-2">
+                <button
+                  onClick={async () => { 
+                    try { 
+                      await navigator.clipboard.writeText(collaborationModal.link);
+                      alert('Collaboration link copied to clipboard!');
+                    } catch (e) {
+                      console.error('Failed to copy:', e);
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md"
+                >
+                  Copy link
+                </button>
+                <a
+                  href={collaborationModal.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-medium rounded-md"
+                >
+                  Open collaboration
+                </a>
+                <button
+                  onClick={() => setCollaborationModal({ open: false, link: '', eventId: null })}
                   className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md"
                 >
                   Close
