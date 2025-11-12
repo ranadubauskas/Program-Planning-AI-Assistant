@@ -136,6 +136,7 @@ const EventSchema = new mongoose.Schema({
   hasAlcohol: { type: Boolean, default: false },
   requiresAV: { type: Boolean, default: false },
   cateringRequired: { type: Boolean, default: false },
+  potentiallyControversial: { type: Boolean, default: false }, // Event may have potential for disruption
   eventType: { type: String, enum: ['mixer', 'concert', 'workshop', 'lecture', 'meeting', 'social', 'academic', 'other'], default: 'other' },
   
   // Enhanced checklist with timeline
@@ -150,7 +151,8 @@ const EventSchema = new mongoose.Schema({
     category: String,
     dependencies: [String], // References to other tasks
     isTimeHeader: { type: Boolean, default: false }, // For time period headers
-    timePeriod: String // Time period label for headers
+    timePeriod: String, // Time period label for headers
+    timingType: { type: String, enum: ['required', 'recommended'], default: 'recommended' } // Required vs recommended timing
   }],
   
   // Timeline milestones
@@ -170,9 +172,13 @@ const EventSchema = new mongoose.Schema({
     conversationContext: [String] // Array of related message contents
   },
   
+  // User notes
+  notes: { type: String },
+  
   // Notifications
   notifications: {
     emailOptIn: { type: Boolean, default: true },
+    reminderDays: { type: Number, default: 5, min: 1, max: 30 }, // Days before due date to send reminder
   },
  
   // Public sharing
@@ -222,7 +228,7 @@ EventSchema.pre('save', function(next) {
 });
 
 // Helpful indexes for public lookups and collaboration
-EventSchema.index({ shareId: 1 }, { unique: true, sparse: true });
+EventSchema.index({ shareId: 1 }, { sparse: true });
 EventSchema.index({ collaborationId: 1 }, { unique: true, sparse: true });
 EventSchema.index({ 'collaborators.userId': 1 });
 EventSchema.index({ owner: 1 });

@@ -105,10 +105,19 @@ const PublicEvent = () => {
                         </div>
                         <div className="flex-1">
                           <p className={`transition-all ${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>{item.task}</p>
-                          <div className="flex items-center space-x-4 mt-1 text-xs text-gray-500">
-                            {item.dueDate && <span>Due: {new Date(item.dueDate).toLocaleDateString()}</span>}
-                            {item.priority && <span>Priority: {item.priority}</span>}
-                          </div>
+                                  <div className="flex items-center space-x-4 mt-1 text-xs text-gray-500 flex-wrap gap-2">
+                                    {item.dueDate && <span>Due: {new Date(item.dueDate).toLocaleDateString()}</span>}
+                                    {item.timingType && (
+                                      <span className={`px-2 py-1 rounded-full ${
+                                        item.timingType === 'required' 
+                                          ? 'bg-red-100 text-red-700 border border-red-200' 
+                                          : 'bg-blue-100 text-blue-700 border border-blue-200'
+                                      }`}>
+                                        {item.timingType === 'required' ? 'Required' : 'Recommended'}
+                                      </span>
+                                    )}
+                                    {item.priority && <span>Priority: {item.priority}</span>}
+                                  </div>
                         </div>
                       </div>
                     ))}

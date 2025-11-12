@@ -35,8 +35,9 @@ To get started, tell me about the program you're planning:
 2. **Location:** Will it be on-campus or off-campus?
 3. **Alcohol:** Will alcohol be involved?
 4. **Technology:** Do you plan to email communications & will you require AV support or Wifi?
-4. **Expected Attendance:** How many people do you expect to attend?
-5. **Target Date:** When are you planning to hold it?
+5. **Expected Attendance:** How many people do you expect to attend?
+6. **Target Date:** When are you planning to hold it?
+7. **Potentially Controversial:** Could this event raise concerns or lead to potential disruption?
 
 I'll guide you through all the necessary steps and create a personalized checklist!`,
         timestamp: new Date()
@@ -280,15 +281,45 @@ Generate a JSON response with this exact structure:
   "eventDate": "YYYY-MM-DD format if a date is mentioned, or null",
   "category": "meeting|deadline|task|milestone|other",
   "priority": "low|medium|high|critical",
+  "eventType": "mixer|concert|workshop|lecture|meeting|social|academic|other",
+  "potentiallyControversial": false,
   "checklist": [
     {
       "task": "Clear task description",
       "dueDate": "YYYY-MM-DD format - when this task should be completed",
       "priority": "low|medium|high|critical",
+      "timingType": "required|recommended",
       "completed": false
     }
   ]
 }
+
+POTENTIALLY CONTROVERSIAL EVENT DETECTION:
+- Set "potentiallyControversial" to true ONLY if the user explicitly mentions:
+  * The event is controversial, may be controversial, or could be controversial
+  * The event may attract protests, demonstrations, or counterprotests
+  * The event has potential for disruption or controversy
+  * The event involves topics that are explicitly stated as divisive or controversial
+- Default to false unless the user explicitly states the event is controversial or may cause disruption
+- Do NOT assume an event is controversial based on topic alone - only if explicitly mentioned by the user
+
+TIMING TYPE CLASSIFICATION:
+- "required": Policy-mandated deadlines, legal requirements, contract deadlines (e.g., space/venue booking 4 weeks before for campus policy - REQUIRED for on-campus events, alcohol permit deadlines, insurance requirements)
+- "recommended": Best practice timelines, suggestions for optimal planning (e.g., send invitations 2-3 weeks before, confirm catering 1 week before)
+
+IMPORTANT: 
+- For on-campus events, ALWAYS include a "Book/reserve on-campus space/venue via EMS Web App" task in the checklist with timingType "required". This is a mandatory step for all on-campus events.
+- For potentially controversial events, ALWAYS include a task to "Contact Vice Provost and Dean of Students for Freedom of Expression policy guidance" at least 48 hours before the event with timingType "required".
+
+EVENT-TYPE-SPECIFIC DAY-OF-EVENT TASKS:
+- Mixer: Networking setup, name tags preparation, refreshments coordination, greeting station setup, icebreaker materials
+- Concert: Sound check, performer coordination, ticketing/check-in, stage setup, merchandise table, security coordination
+- Workshop: Materials setup, registration table, presentation equipment, handouts preparation, breakout room setup, facilitator briefing
+- Lecture: Podium setup, recording equipment, Q&A preparation, speaker introduction preparation, audience seating arrangement, microphones testing
+- Meeting: Agenda distribution, conference call setup, document sharing, room configuration, participant materials, note-taking setup
+- Social: Decorations, entertainment setup, photo booth, guest check-in, activity stations, refreshment stations
+- Academic: Presentation setup, research materials, discussion prompts, evaluation forms, technology testing, accessibility accommodations
+- Other: General event execution tasks based on event specifics
 
 COMPREHENSIVE TIMELINE RULES (work backwards from event date):
 
@@ -299,7 +330,7 @@ COMPREHENSIVE TIMELINE RULES (work backwards from event date):
 - Initial venue research for large events
 
 **3-6 MONTHS OUT - Major Bookings & Permissions:**
-- Venue booking and contracts
+- Space/venue booking and contracts (REQUIRED for on-campus events - use EMS Web App)
 - Permits and licenses
 - Security arrangements
 - Insurance requirements
@@ -342,9 +373,15 @@ COMPREHENSIVE TIMELINE RULES (work backwards from event date):
 - Final venue preparations
 
 **DAY OF EVENT:**
-- Event execution and management
-- Real-time coordination
-- Problem solving
+Generate event-type-specific tasks based on the eventType field:
+- Mixer: Networking setup, name tags, refreshments coordination, greeting station
+- Concert: Sound check, performer coordination, ticketing, stage setup
+- Workshop: Materials setup, registration table, presentation equipment, handouts
+- Lecture: Podium setup, recording equipment, Q&A preparation, speaker intro
+- Meeting: Agenda distribution, conference call setup, document sharing
+- Social: Decorations, entertainment setup, photo booth, guest check-in
+- Academic: Presentation setup, research materials, discussion prompts
+- Other: General event execution and real-time coordination tasks
 
 **AFTER EVENT:**
 - Cleanup and breakdown
@@ -391,6 +428,77 @@ Only return the JSON, no other text.`;
       const eventDate = eventData.eventDate ? new Date(eventData.eventDate) : null;
       let checklist = eventData.checklist || [];
       
+      // Detect location from content if not in eventData
+      const lowerContent = content.toLowerCase();
+      const isOnCampus = eventData.location?.type === 'on-campus' || 
+                         lowerContent.includes('on-campus') || 
+                         lowerContent.includes('on campus');
+      const isOffCampus = eventData.location?.type === 'off-campus' || 
+                          lowerContent.includes('off-campus') || 
+                          lowerContent.includes('off campus');
+      
+      // Detect potentially controversial events - only if user explicitly mentions it
+      // Use more conservative detection - only explicit mentions of controversy or disruption
+      const explicitControversialKeywords = [
+        'controversial', 'may be controversial', 'could be controversial', 'potentially controversial',
+        'may attract protest', 'may cause disruption', 'potential for disruption', 'may be disruptive',
+        'could cause controversy', 'might be controversial', 'expect protests', 'expect demonstrations'
+      ];
+      const isPotentiallyControversial = eventData.potentiallyControversial === true ||
+        explicitControversialKeywords.some(keyword => lowerContent.includes(keyword));
+      
+      // Check if booking task exists and add if missing for on-campus events
+      const hasBookingTask = checklist.some(item => 
+        item.task && (
+          item.task.toLowerCase().includes('book') || 
+          item.task.toLowerCase().includes('reserve') || 
+          item.task.toLowerCase().includes('venue') ||
+          item.task.toLowerCase().includes('space')
+        )
+      );
+      
+      if (isOnCampus && !hasBookingTask && eventDate) {
+        // Add booking space task 4 weeks before event (required)
+        const bookingDueDate = new Date(eventDate);
+        bookingDueDate.setDate(bookingDueDate.getDate() - 28); // 4 weeks before
+        checklist.unshift({
+          task: 'Reserve on-campus space/venue via EMS Web App',
+          dueDate: bookingDueDate,
+          priority: 'high',
+          timingType: 'required',
+          completed: false
+        });
+      }
+      
+      // Add Dean of Students contact task for controversial events (at least 48 hours before)
+      if (isPotentiallyControversial && eventDate) {
+        const deanContactDate = new Date(eventDate);
+        deanContactDate.setDate(deanContactDate.getDate() - 2); // 2 days before (48 hours)
+        // Only add if not already in checklist
+        const hasDeanTask = checklist.some(item => 
+          item.task && (
+            item.task.toLowerCase().includes('dean') || 
+            item.task.toLowerCase().includes('vice provost') ||
+            item.task.toLowerCase().includes('freedom of expression')
+          )
+        );
+        if (!hasDeanTask) {
+          checklist.push({
+            task: 'Contact Vice Provost and Dean of Students for Freedom of Expression policy guidance (required at least 48 hours before event)',
+            dueDate: deanContactDate,
+            priority: 'high',
+            timingType: 'required',
+            completed: false
+          });
+        }
+      }
+      
+      // Ensure timingType is set for all checklist items (default to 'recommended')
+      checklist = checklist.map(item => ({
+        ...item,
+        timingType: item.timingType || 'recommended'
+      }));
+      
       console.log('📋 Raw checklist:', checklist);
       
       // Always apply time organization to the checklist
@@ -399,12 +507,18 @@ Only return the JSON, no other text.`;
         console.log('🗓️ Organized checklist:', checklist);
       }
       
+      // Set location if detected
+      const location = eventData.location || (isOnCampus ? { type: 'on-campus' } : (isOffCampus ? { type: 'off-campus' } : undefined));
+      
       const finalEventData = {
         title: eventData.title || 'Event from Chat',
         description: eventData.description || 'Event planning checklist',
         eventDate: eventDate,
         category: eventData.category || 'task',
         priority: eventData.priority || 'medium',
+        eventType: eventData.eventType || 'other',
+        location: location,
+        potentiallyControversial: isPotentiallyControversial,
         checklist: checklist,
         timeline: [], // Focus on checklist
         status: 'pending'
@@ -433,15 +547,81 @@ Only return the JSON, no other text.`;
     let eventDate = extractMainEventDate(content);
     let category = detectEventCategory(content);
     let priority = detectPriority(content);
+    let eventType = detectEventType(content);
     
-    console.log('📊 Extracted basic info:', { title, eventDate, category, priority });
+    console.log('📊 Extracted basic info:', { title, eventDate, category, priority, eventType });
     
     // Focus on extracting and organizing checklist with intelligent due dates
     const checklist = extractAndOrganizeChecklist(content, eventDate);
-    console.log('📋 Extracted checklist:', checklist);
+    
+    // Check if this is an on-campus event and add booking space task if not present
+    const isOnCampus = lowerContent.includes('on-campus') || lowerContent.includes('on campus');
+    const hasBookingTask = checklist.some(item => 
+      item.task && (
+        item.task.toLowerCase().includes('book') || 
+        item.task.toLowerCase().includes('reserve') || 
+        item.task.toLowerCase().includes('venue') ||
+        item.task.toLowerCase().includes('space')
+      )
+    );
+    
+    if (isOnCampus && !hasBookingTask && eventDate) {
+      // Add booking space task 4 weeks before event (required)
+      const bookingDueDate = new Date(eventDate);
+      bookingDueDate.setDate(bookingDueDate.getDate() - 28); // 4 weeks before
+      checklist.unshift({
+        task: 'Reserve on-campus space/venue via EMS Web App',
+        dueDate: bookingDueDate,
+        priority: 'high',
+        timingType: 'required',
+        completed: false
+      });
+    }
+    
+    // Add Dean of Students contact task for controversial events (at least 48 hours before)
+    if (potentiallyControversial && eventDate) {
+      const deanContactDate = new Date(eventDate);
+      deanContactDate.setDate(deanContactDate.getDate() - 2); // 2 days before (48 hours)
+      // Only add if not already in checklist
+      const hasDeanTask = checklist.some(item => 
+        item.task && (
+          item.task.toLowerCase().includes('dean') || 
+          item.task.toLowerCase().includes('vice provost') ||
+          item.task.toLowerCase().includes('freedom of expression')
+        )
+      );
+      if (!hasDeanTask) {
+        checklist.push({
+          task: 'Contact Vice Provost and Dean of Students for Freedom of Expression policy guidance (required at least 48 hours before event)',
+          dueDate: deanContactDate,
+          priority: 'high',
+          timingType: 'required',
+          completed: false
+        });
+      }
+    }
+    
+    // Ensure timingType is set for all checklist items (default to 'recommended')
+    const checklistWithTiming = checklist.map(item => ({
+      ...item,
+      timingType: item.timingType || 'recommended'
+    }));
+    console.log('📋 Extracted checklist:', checklistWithTiming);
     
     // Create minimal description (just the event summary, not the full content)
     let description = extractEventSummary(content);
+    
+    // Set location type if detected
+    const location = isOnCampus ? { type: 'on-campus' } : (lowerContent.includes('off-campus') || lowerContent.includes('off campus') ? { type: 'off-campus' } : undefined);
+
+    // Detect potentially controversial events - only if user explicitly mentions it
+    // Use more conservative detection - only explicit mentions of controversy or disruption
+    const explicitControversialKeywords = [
+      'controversial', 'may be controversial', 'could be controversial', 'potentially controversial',
+      'may attract protest', 'may cause disruption', 'potential for disruption', 'may be disruptive',
+      'could cause controversy', 'might be controversial', 'expect protests', 'expect demonstrations'
+    ];
+    const potentiallyControversial = explicitControversialKeywords.some(keyword => lowerContent.includes(keyword));
 
     const extractedData = {
       title,
@@ -449,7 +629,10 @@ Only return the JSON, no other text.`;
       eventDate,
       category,
       priority,
-      checklist,
+      eventType,
+      location,
+      potentiallyControversial,
+      checklist: checklistWithTiming,
       timeline: [], // Focus on checklist, minimal timeline
       status: 'pending'
     };
@@ -517,7 +700,38 @@ Only return the JSON, no other text.`;
         }
       }
     }
+    
+    // If only a month is mentioned without a year, assume the current year
+    const monthOnlyRegex = /(january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
+    const monthMatch = content.match(monthOnlyRegex);
+    if (monthMatch) {
+      const currentYear = new Date().getFullYear();
+      const monthStr = monthMatch[0];
+      try {
+        const dateStr = `${monthStr} 1, ${currentYear}`;
+        const parsedDate = new Date(dateStr);
+        // Validate that the date parsed correctly
+        if (!isNaN(parsedDate.getTime())) {
+          return parsedDate;
+        }
+      } catch (e) {
+        // If parsing fails, continue to return null
+      }
+    }
+    
     return null;
+  };
+
+  const detectEventType = (content) => {
+    const lowerContent = content.toLowerCase();
+    if (lowerContent.includes('mixer')) return 'mixer';
+    if (lowerContent.includes('concert')) return 'concert';
+    if (lowerContent.includes('workshop')) return 'workshop';
+    if (lowerContent.includes('lecture')) return 'lecture';
+    if (lowerContent.includes('meeting')) return 'meeting';
+    if (lowerContent.includes('social')) return 'social';
+    if (lowerContent.includes('academic') || lowerContent.includes('seminar')) return 'academic';
+    return 'other';
   };
 
   const detectEventCategory = (content) => {
@@ -693,6 +907,7 @@ Only return the JSON, no other text.`;
       description: '',
       dueDate,
       priority,
+      timingType: 'recommended', // Default to recommended, can be updated by AI
       completed: false
     };
   };

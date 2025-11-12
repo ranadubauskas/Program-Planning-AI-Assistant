@@ -12,6 +12,8 @@ import { User, ProgramPlan, Policy, Event } from './models.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+const normEmail = (e) => (e || '').trim().toLowerCase();
+
 // Connect to MongoDB
 let mongoConnected = false;
 try {
@@ -337,10 +339,15 @@ Respond in valid JSON format with only the fields that were discussed or changed
       "task": "task description",
       "dueDate": "YYYY-MM-DD or null",
       "priority": "low|medium|high|critical",
+      "timingType": "required|recommended",
       "category": "category name"
     }
   ]
 }
+
+TIMING TYPE CLASSIFICATION:
+- "required": Policy-mandated deadlines, legal requirements, contract deadlines (e.g., venue booking 4 weeks before for campus policy, alcohol permit deadlines, insurance requirements)
+- "recommended": Best practice timelines, suggestions for optimal planning (e.g., send invitations 2-3 weeks before, confirm catering 1 week before)
 
 IMPORTANT: Only include fields that were actually discussed or changed. Omit any fields not mentioned in the conversation.`;
 
@@ -417,6 +424,7 @@ IMPORTANT: Only include fields that were actually discussed or changed. Omit any
         dueDate: item.dueDate || null,
         completed: false,
         priority: item.priority || 'medium',
+        timingType: item.timingType || 'recommended',
         category: item.category || 'general'
       }));
     }
@@ -479,6 +487,25 @@ app.post('/api/events', async (req, res) => {
         updatedAt: new Date()
       };
       
+      // Ensure checklist items have timingType set
+      if (eventData.checklist && Array.isArray(eventData.checklist)) {
+        eventData.checklist = eventData.checklist.map(item => ({
+          ...item,
+          timingType: item.timingType || 'recommended'
+        }));
+      }
+      
+      // Ensure notifications object has defaults
+      if (!eventData.notifications) {
+        eventData.notifications = {};
+      }
+      if (eventData.notifications.emailOptIn === undefined) {
+        eventData.notifications.emailOptIn = true;
+      }
+      if (eventData.notifications.reminderDays === undefined) {
+        eventData.notifications.reminderDays = 5;
+      }
+      
       console.log('💾 Saving event to MongoDB:', eventData);
       
       const event = new Event(eventData);
@@ -536,6 +563,15 @@ app.put('/api/events/:id', async (req, res) => {
 
     // Handle checklist updates intelligently
     let updateData = { ...req.body };
+    
+    // Merge notifications object if provided
+    if (req.body.notifications) {
+      updateData.notifications = {
+        ...(existingEvent.notifications || {}),
+        ...req.body.notifications
+      };
+    }
+    
     if (req.body.checklist && Array.isArray(req.body.checklist)) {
       const existingChecklist = existingEvent.checklist || [];
       
@@ -553,7 +589,11 @@ app.put('/api/events/:id', async (req, res) => {
             console.log(`   Item ${index}: "${newItem.task}" changed from ${oldItem.completed} to ${newItem.completed}`);
           }
         });
-        updateData.checklist = req.body.checklist;
+        // Ensure timingType is preserved or set to default
+        updateData.checklist = req.body.checklist.map((item, idx) => ({
+          ...item,
+          timingType: item.timingType || existingChecklist[idx]?.timingType || 'recommended'
+        }));
       } else {
         // This is adding new items - use the original merging logic
         const newItems = req.body.checklist.filter(newItem => {
@@ -565,7 +605,12 @@ app.put('/api/events/:id', async (req, res) => {
         
         if (newItems.length > 0) {
           console.log(`➕ Adding ${newItems.length} new checklist items`);
-          updateData.checklist = [...existingChecklist, ...newItems];
+          // Ensure new items have timingType set
+          const newItemsWithTiming = newItems.map(item => ({
+            ...item,
+            timingType: item.timingType || 'recommended'
+          }));
+          updateData.checklist = [...existingChecklist, ...newItemsWithTiming];
         } else {
           // No new items to add, keep existing checklist
           delete updateData.checklist;
@@ -746,22 +791,41 @@ app.get('/api/collaborate/:collaborationId', async (req, res) => {
       return res.status(503).json({ error: 'Database not connected' });
     }
 
-    const event = await Event.findOne({ 
-      collaborationId: req.params.collaborationId, 
-      collaborationEnabled: true 
+    const event = await Event.findOne({
+      collaborationId: req.params.collaborationId,
+      collaborationEnabled: true
     }).lean();
-    
+
     if (!event) {
       return res.status(404).json({ error: 'Collaborative event not found or collaboration disabled' });
     }
 
-    // Return full event data for collaboration (not just public fields)
-    res.json(event);
+    // Fetch owner basic profile
+    let ownerInfo = null;
+    try {
+      const ownerUser = await User.findById(event.owner || event.userId)
+        .select('firstName lastName email _id')
+        .lean();
+      if (ownerUser) {
+        ownerInfo = {
+          _id: ownerUser._id,
+          firstName: ownerUser.firstName,
+          lastName: ownerUser.lastName,
+          email: (ownerUser.email || '').trim().toLowerCase(),
+        };
+      }
+    } catch (e) {
+      // non-fatal
+      console.warn('Owner lookup failed:', e.message);
+    }
+
+    res.json({ ...event, ownerInfo });
   } catch (error) {
     console.error('❌ Get collaborative event error:', error);
     res.status(500).json({ error: 'Failed to load collaborative event' });
   }
 });
+
 
 // Add collaborator to event
 app.post('/api/events/:id/collaborators', async (req, res) => {
@@ -770,7 +834,9 @@ app.post('/api/events/:id/collaborators', async (req, res) => {
       return res.status(503).json({ error: 'Database not connected' });
     }
 
-    const { email, firstName, lastName, userId, permission = 'edit' } = req.body;
+    const { email: rawEmail, firstName, lastName, userId, permission = 'edit' } = req.body;
+    const email = normEmail(rawEmail);
+
     
     if (!email || !firstName || !lastName) {
       return res.status(400).json({ error: 'Email, first name, and last name are required' });
@@ -786,7 +852,7 @@ app.post('/api/events/:id/collaborators', async (req, res) => {
     }
 
     // Check if collaborator already exists
-    const existingCollaborator = event.collaborators.find(c => c.email === email);
+    const existingCollaborator = (event.collaborators || []).find(c => normEmail(c.email) === email);
     if (existingCollaborator) {
       return res.status(400).json({ error: 'User is already a collaborator' });
     }
@@ -794,7 +860,7 @@ app.post('/api/events/:id/collaborators', async (req, res) => {
     // Add collaborator
     const collaborator = {
       userId: userId || null,
-      email: email,
+      email,
       firstName: firstName,
       lastName: lastName,
       permission: permission,
@@ -863,49 +929,63 @@ app.delete('/api/events/:id/collaborators/:collaboratorId', async (req, res) => 
   }
 });
 
-// Update collaborative event (with permission checking)
+// --- UPDATE: PUT /api/collaborate/:collaborationId
 app.put('/api/collaborate/:collaborationId', async (req, res) => {
+  const normEmail = (e) => (e || '').trim().toLowerCase();
+
   try {
     if (!mongoConnected) {
       return res.status(503).json({ error: 'Database not connected' });
     }
 
-    const { userId, userName, ...updateData } = req.body;
-    
-    const event = await Event.findOne({ 
-      collaborationId: req.params.collaborationId, 
-      collaborationEnabled: true 
+    const { userId, userName, email: rawEmail, ...updateData } = req.body;
+    const email = normEmail(rawEmail);
+
+    if (!userId && !email) {
+      return res.status(400).json({ error: 'userId or email is required' });
+    }
+
+    const event = await Event.findOne({
+      collaborationId: req.params.collaborationId,
+      collaborationEnabled: true
     });
-    
+
     if (!event) {
       return res.status(404).json({ error: 'Collaborative event not found' });
     }
 
-    // Check permissions (owner or collaborator with edit permission)
-    const isOwner = String(event.owner || event.userId) === String(userId);
-    const collaborator = event.collaborators.find(c => String(c.userId) === String(userId));
+    // Owner or invited collaborator (by userId OR invited email) with edit/admin
+    const isOwner = userId && String(event.owner || event.userId) === String(userId);
+    const collaborator = (event.collaborators || []).find(c => {
+      const idMatch = userId && c.userId && String(c.userId) === String(userId);
+      const emailMatch = email && normEmail(c.email) === email;
+      return idMatch || emailMatch;
+    });
+
     const hasEditPermission = isOwner || (collaborator && ['edit', 'admin'].includes(collaborator.permission));
-    
     if (!hasEditPermission) {
+      // Uncomment for one-time debugging:
+      // console.log('[COLLAB PUT] denied', { userId, email, isOwner, found: !!collaborator, perm: collaborator?.permission });
       return res.status(403).json({ error: 'Insufficient permissions to edit this event' });
     }
 
-    // Update collaborator's last active time
+    // Update collaborator's last active; bind userId if we matched by email
     if (collaborator) {
+      if (!collaborator.userId && userId) collaborator.userId = userId;
       collaborator.lastActive = new Date();
+      // If collaborators is a plain array of objects (not strict subdocs), this helps:
+      event.markModified && event.markModified('collaborators');
     }
 
-    // Handle checklist updates with activity tracking
+    // Checklist activity logging (completed/uncompleted)
     if (updateData.checklist && Array.isArray(updateData.checklist)) {
       const existingChecklist = event.checklist || [];
-      
-      // Check for checkbox changes to log activity
       updateData.checklist.forEach((newItem, index) => {
         const oldItem = existingChecklist[index];
         if (oldItem && newItem.completed !== oldItem.completed) {
           if (!event.activityLog) event.activityLog = [];
           event.activityLog.push({
-            userId: userId,
+            userId: userId || null,
             userName: userName || 'Unknown User',
             action: newItem.completed ? 'completed_task' : 'uncompleted_task',
             description: `${newItem.completed ? 'Completed' : 'Uncompleted'} task: ${newItem.task}`,
@@ -919,13 +999,13 @@ app.put('/api/collaborate/:collaborationId', async (req, res) => {
     // Apply updates
     Object.assign(event, updateData);
     event.updatedAt = new Date();
-    
-    // Log general update activity (if not just checkbox changes)
+
+    // General update activity (if more than just checklist)
     const isChecklistOnlyUpdate = Object.keys(updateData).length === 1 && updateData.checklist;
     if (!isChecklistOnlyUpdate) {
       if (!event.activityLog) event.activityLog = [];
       event.activityLog.push({
-        userId: userId,
+        userId: userId || null,
         userName: userName || 'Unknown User',
         action: 'updated',
         description: 'Updated event details',
@@ -942,72 +1022,217 @@ app.put('/api/collaborate/:collaborationId', async (req, res) => {
   }
 });
 
-// Join collaborative event (for users clicking collaboration link)
+
+// // Update collaborative event (with permission checking)
+// app.put('/api/collaborate/:collaborationId', async (req, res) => {
+//   try {
+//     if (!mongoConnected) {
+//       return res.status(503).json({ error: 'Database not connected' });
+//     }
+
+//     const { userId, userName, ...updateData } = req.body;
+    
+//     const event = await Event.findOne({ 
+//       collaborationId: req.params.collaborationId, 
+//       collaborationEnabled: true 
+//     });
+    
+//     if (!event) {
+//       return res.status(404).json({ error: 'Collaborative event not found' });
+//     }
+
+//     // Check permissions (owner or collaborator with edit permission)
+//     const isOwner = String(event.owner || event.userId) === String(userId);
+//     const collaborator = event.collaborators.find(c => String(c.userId) === String(userId));
+//     const hasEditPermission = isOwner || (collaborator && ['edit', 'admin'].includes(collaborator.permission));
+    
+//     if (!hasEditPermission) {
+//       return res.status(403).json({ error: 'Insufficient permissions to edit this event' });
+//     }
+
+//     // Update collaborator's last active time
+//     if (collaborator) {
+//       collaborator.lastActive = new Date();
+//     }
+
+//     // Handle checklist updates with activity tracking
+//     if (updateData.checklist && Array.isArray(updateData.checklist)) {
+//       const existingChecklist = event.checklist || [];
+      
+//       // Check for checkbox changes to log activity
+//       updateData.checklist.forEach((newItem, index) => {
+//         const oldItem = existingChecklist[index];
+//         if (oldItem && newItem.completed !== oldItem.completed) {
+//           if (!event.activityLog) event.activityLog = [];
+//           event.activityLog.push({
+//             userId: userId,
+//             userName: userName || 'Unknown User',
+//             action: newItem.completed ? 'completed_task' : 'uncompleted_task',
+//             description: `${newItem.completed ? 'Completed' : 'Uncompleted'} task: ${newItem.task}`,
+//             timestamp: new Date(),
+//             metadata: { taskIndex: index, taskId: newItem._id }
+//           });
+//         }
+//       });
+//     }
+
+//     // Apply updates
+//     Object.assign(event, updateData);
+//     event.updatedAt = new Date();
+    
+//     // Log general update activity (if not just checkbox changes)
+//     const isChecklistOnlyUpdate = Object.keys(updateData).length === 1 && updateData.checklist;
+//     if (!isChecklistOnlyUpdate) {
+//       if (!event.activityLog) event.activityLog = [];
+//       event.activityLog.push({
+//         userId: userId,
+//         userName: userName || 'Unknown User',
+//         action: 'updated',
+//         description: 'Updated event details',
+//         timestamp: new Date(),
+//         metadata: { updatedFields: Object.keys(updateData) }
+//       });
+//     }
+
+//     await event.save();
+//     res.json(event);
+//   } catch (error) {
+//     console.error('❌ Update collaborative event error:', error);
+//     res.status(500).json({ error: 'Failed to update collaborative event' });
+//   }
+// });
+
+// // Join collaborative event (for users clicking collaboration link)
+// app.post('/api/collaborate/:collaborationId/join', async (req, res) => {
+//   try {
+//     if (!mongoConnected) {
+//       return res.status(503).json({ error: 'Database not connected' });
+//     }
+
+//     const { userId, email: rawEmail, firstName, lastName } = req.body;
+//     const email = normEmail(rawEmail);
+    
+//     if (!email || !firstName || !lastName) {
+//       return res.status(400).json({ error: 'Email, first name, and last name are required' });
+//     }
+
+//     const event = await Event.findOne({ 
+//       collaborationId: req.params.collaborationId, 
+//       collaborationEnabled: true 
+//     });
+    
+//     if (!event) {
+//       return res.status(404).json({ error: 'Collaborative event not found' });
+//     }
+
+//     // Check if user is already a collaborator
+//     const existingCollaborator = (event.collaborators || []).find(c =>
+//       normEmail(c.email) === email || (userId && c.userId && String(c.userId) === String(userId))
+//     );
+
+//     if (!existingCollaborator) {
+//         return res.status(403).json({ error: 'This email is not invited to collaborate on this event.' });
+//     }
+
+//     if (!existingCollaborator) {
+//       // Add as new collaborator with default edit permission
+//       const collaborator = {
+//         userId: userId || null,
+//         email: email,
+//         firstName: firstName,
+//         lastName: lastName,
+//         permission: 'edit',
+//         addedAt: new Date(),
+//         addedBy: null, // Self-joined
+//         lastActive: new Date()
+//       };
+
+//       event.collaborators.push(collaborator);
+      
+//       // Add activity log entry
+//       if (!event.activityLog) event.activityLog = [];
+//       event.activityLog.push({
+//         userId: userId,
+//         userName: `${firstName} ${lastName}`,
+//         action: 'joined',
+//         description: `${firstName} ${lastName} joined as a collaborator`,
+//         timestamp: new Date(),
+//         metadata: { email }
+//       });
+
+//       await event.save();
+//     } else {
+//       // Update existing collaborator's last active time
+//       existingCollaborator.lastActive = new Date();
+//       await event.save();
+//     }
+
+//     res.json({ message: 'Successfully joined collaborative event', event });
+//   } catch (error) {
+//     console.error('❌ Join collaborative event error:', error);
+//     res.status(500).json({ error: 'Failed to join collaborative event' });
+//   }
+// });
+
+// --- JOIN: POST /api/collaborate/:collaborationId/join
 app.post('/api/collaborate/:collaborationId/join', async (req, res) => {
+  const normEmail = (e) => (e || '').trim().toLowerCase();
+
   try {
     if (!mongoConnected) {
       return res.status(503).json({ error: 'Database not connected' });
     }
 
-    const { userId, email, firstName, lastName } = req.body;
-    
+    const { userId, email: rawEmail, firstName, lastName } = req.body;
+    const email = normEmail(rawEmail);
+
     if (!email || !firstName || !lastName) {
       return res.status(400).json({ error: 'Email, first name, and last name are required' });
     }
 
-    const event = await Event.findOne({ 
-      collaborationId: req.params.collaborationId, 
-      collaborationEnabled: true 
+    const event = await Event.findOne({
+      collaborationId: req.params.collaborationId,
+      collaborationEnabled: true
     });
-    
+
     if (!event) {
       return res.status(404).json({ error: 'Collaborative event not found' });
     }
 
-    // Check if user is already a collaborator
-    const existingCollaborator = event.collaborators.find(c => 
-      c.email === email || (userId && String(c.userId) === String(userId))
+    // Must have been invited by email (invite-only)
+    const collaborator = (event.collaborators || []).find(c =>
+      normEmail(c.email) === email || (userId && c.userId && String(c.userId) === String(userId))
     );
-    
-    if (!existingCollaborator) {
-      // Add as new collaborator with default edit permission
-      const collaborator = {
-        userId: userId || null,
-        email: email,
-        firstName: firstName,
-        lastName: lastName,
-        permission: 'edit',
-        addedAt: new Date(),
-        addedBy: null, // Self-joined
-        lastActive: new Date()
-      };
 
-      event.collaborators.push(collaborator);
-      
-      // Add activity log entry
-      if (!event.activityLog) event.activityLog = [];
-      event.activityLog.push({
-        userId: userId,
-        userName: `${firstName} ${lastName}`,
-        action: 'joined',
-        description: `${firstName} ${lastName} joined as a collaborator`,
-        timestamp: new Date(),
-        metadata: { email }
-      });
-
-      await event.save();
-    } else {
-      // Update existing collaborator's last active time
-      existingCollaborator.lastActive = new Date();
-      await event.save();
+    if (!collaborator) {
+      return res.status(403).json({ error: 'This email is not invited to collaborate on this event.' });
     }
 
+    // Bind userId if missing; refresh names; update lastActive
+    if (!collaborator.userId && userId) collaborator.userId = userId;
+    if (firstName) collaborator.firstName = firstName;
+    if (lastName)  collaborator.lastName  = lastName;
+    collaborator.lastActive = new Date();
+
+    // Log join activity
+    if (!event.activityLog) event.activityLog = [];
+    event.activityLog.push({
+      userId: userId || null,
+      userName: `${firstName} ${lastName}`,
+      action: 'joined',
+      description: `${firstName} ${lastName} joined with invited email`,
+      timestamp: new Date(),
+      metadata: { email }
+    });
+
+    await event.save();
     res.json({ message: 'Successfully joined collaborative event', event });
   } catch (error) {
     console.error('❌ Join collaborative event error:', error);
     res.status(500).json({ error: 'Failed to join collaborative event' });
   }
 });
+
 
 // Get activity log for collaborative event
 app.get('/api/collaborate/:collaborationId/activity', async (req, res) => {
@@ -1100,17 +1325,18 @@ app.get('/api/notifications/unsubscribe', async (req, res) => {
   }
 });
 
-async function sendReminderEmail({ to, user, event, tasks }) {
+async function sendReminderEmail({ to, user, event, tasks, reminderDays }) {
   const baseApp = (process.env.PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
   const unsubscribeSig = signUnsubscribe(String(user._id), String(event._id));
   const unsubscribeUrl = `${(process.env.PUBLIC_API_URL || `http://localhost:${PORT}`).replace(/\/$/, '')}/api/notifications/unsubscribe?uid=${user._id}&eid=${event._id}&sig=${unsubscribeSig}`;
 
-  const subject = `Reminder: ${tasks.length} task(s) due in 5 days for ${event.title}`;
+  const daysText = reminderDays === 1 ? '1 day' : `${reminderDays} days`;
+  const subject = `Reminder: ${tasks.length} task(s) due in ${daysText} for ${event.title}`;
   const lines = tasks.map(t => `• ${t.task}${t.dueDate ? ` (due ${new Date(t.dueDate).toLocaleDateString()})` : ''}`);
   const html = `
     <div style="font-family: Arial, sans-serif; line-height:1.5; color:#111">
       <h2 style="margin:0 0 8px 0;">Upcoming tasks for: ${event.title}</h2>
-      <p>The following task(s) are due in 5 days:</p>
+      <p>The following task(s) are due in ${daysText}:</p>
       <ul>${lines.map(li => `<li>${li}</li>`).join('')}</ul>
       <p>
         View event: <a href="${baseApp}/events" target="_blank">Open Saved Events</a>
@@ -1132,13 +1358,22 @@ cron.schedule('0 8 * * *', async () => {
   if (!mongoConnected) return;
   try {
     const now = new Date();
-    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5);
-    const start = new Date(target); start.setHours(0,0,0,0);
-    const end = new Date(target); end.setHours(23,59,59,999);
-
     const events = await Event.find({ 'notifications.emailOptIn': { $ne: false } }).lean();
+    
     for (const ev of events) {
-      const dueTasks = (ev.checklist || []).filter(it => !it.isTimeHeader && !it.completed && it.dueDate && (new Date(it.dueDate) >= start && new Date(it.dueDate) <= end));
+      // Use per-event reminderDays, default to 5 if not set
+      const reminderDays = ev.notifications?.reminderDays || 5;
+      const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + reminderDays);
+      const start = new Date(target); start.setHours(0,0,0,0);
+      const end = new Date(target); end.setHours(23,59,59,999);
+
+      const dueTasks = (ev.checklist || []).filter(it => 
+        !it.isTimeHeader && 
+        !it.completed && 
+        it.dueDate && 
+        (new Date(it.dueDate) >= start && new Date(it.dueDate) <= end)
+      );
+      
       if (!dueTasks.length) continue;
 
       // Load user email
@@ -1146,7 +1381,7 @@ cron.schedule('0 8 * * *', async () => {
       try { user = await User.findById(ev.userId).lean(); } catch {}
       if (!user?.email) continue;
 
-      await sendReminderEmail({ to: user.email, user, event: ev, tasks: dueTasks });
+      await sendReminderEmail({ to: user.email, user, event: ev, tasks: dueTasks, reminderDays });
     }
   } catch (e) {
     console.error('Cron email job error:', e);

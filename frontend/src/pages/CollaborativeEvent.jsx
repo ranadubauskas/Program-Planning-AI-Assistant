@@ -30,6 +30,16 @@ const CollaborativeEvent = ({ user }) => {
   const [showCollaborators, setShowCollaborators] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState(new Set());
   const pollRef = useRef(null);
+  const [showShare, setShowShare] = useState(false);
+  const [invite, setInvite] = useState({ firstName: '', lastName: '', email: '', permission: 'edit' });
+  const [shareLink, setShareLink] = useState('');
+  const [identity, setIdentity] = useState({
+    userId: user?._id || null,
+    email: (user?.email || '').trim().toLowerCase() || '',
+    userName: user ? `${user.firstName} ${user.lastName}` : ''
+  });
+
+
   
   // Join form state
   const [joinForm, setJoinForm] = useState({
@@ -56,37 +66,60 @@ const CollaborativeEvent = ({ user }) => {
     };
   }, [collaborationId]);
 
-  const loadEvent = async () => {
-    try {
-      const response = await axios.get(`/api/collaborate/${collaborationId}`);
-      setEvent(response.data);
-      
-      // Check if current user is already a collaborator or owner
-      if (user) {
-        const isOwner = String(response.data.owner || response.data.userId) === String(user._id);
-        const isCollaborator = response.data.collaborators?.some(c => 
-          String(c.userId) === String(user._id) || c.email === user.email
-        );
-        setHasJoined(isOwner || isCollaborator);
-      }
-      
-      // Start polling for updates
-      if (!pollRef.current) {
-        pollRef.current = setInterval(() => {
-          loadEventSilently();
-        }, 5000); // Poll every 5 seconds
-      }
-    } catch (error) {
-      console.error('Error loading collaborative event:', error);
-      if (error.response?.status === 404) {
-        setError('Collaborative event not found or collaboration has been disabled.');
-      } else {
-        setError('Failed to load collaborative event. Please try again.');
-      }
-    } finally {
-      setLoading(false);
+  // --- loadEvent ---
+const loadEvent = async () => {
+  const norm = (e) => (e || '').trim().toLowerCase();
+  try {
+    const response = await axios.get(`/api/collaborate/${collaborationId}`);
+    const ev = response.data;
+    setEvent(ev);
+
+    // If we have an app-authenticated user, refresh identity from it
+    if (user) {
+      setIdentity({
+        userId: user._id || null,
+        email: norm(user.email),
+        userName: `${user.firstName} ${user.lastName}`.trim(),
+      });
     }
-  };
+
+    // Check join status
+    if (user) {
+      const isOwner = String(ev.owner || ev.userId) === String(user._id);
+      const isCollaborator = (ev.collaborators || []).some(
+        (c) => String(c.userId) === String(user._id) || norm(c.email) === norm(user.email)
+      );
+      setHasJoined(isOwner || isCollaborator);
+    }
+
+    // Start polling for updates
+    if (!pollRef.current) {
+      pollRef.current = setInterval(() => {
+        loadEventSilently();
+      }, 5000);
+    }
+  } catch (error) {
+    console.error('Error loading collaborative event:', error);
+    if (error.response?.status === 404) {
+      setError('Collaborative event not found or collaboration has been disabled.');
+    } else {
+      setError('Failed to load collaborative event. Please try again.');
+    }
+  } finally {
+    setLoading(false);
+  }
+};
+
+const copyShareLink = async () => {
+  if (!shareLink) return;
+  try {
+    await navigator.clipboard.writeText(shareLink);
+    alert('Link copied to clipboard!');
+  } catch (e) {
+    console.error('Clipboard error:', e);
+    alert('Could not copy link. Please copy it manually.');
+  }
+};
 
   const loadEventSilently = async () => {
     try {
@@ -107,23 +140,33 @@ const CollaborativeEvent = ({ user }) => {
     }
   };
 
-  const joinCollaboration = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post(`/api/collaborate/${collaborationId}/join`, {
-        userId: user?._id,
-        firstName: joinForm.firstName,
-        lastName: joinForm.lastName,
-        email: joinForm.email
-      });
-      
-      setHasJoined(true);
-      loadEvent(); // Reload to get updated collaborator list
-    } catch (error) {
-      console.error('Error joining collaboration:', error);
-      alert(error.response?.data?.error || 'Failed to join collaboration');
-    }
-  };
+ // --- joinCollaboration ---
+const joinCollaboration = async (e) => {
+  e.preventDefault();
+  const norm = (x) => (x || '').trim().toLowerCase();
+
+  try {
+    await axios.post(`/api/collaborate/${collaborationId}/join`, {
+      userId: user?._id,
+      firstName: joinForm.firstName,
+      lastName: joinForm.lastName,
+      email: joinForm.email,
+    });
+
+    // Persist a local identity so future edits always include an identifier
+    setIdentity({
+      userId: user?._id || null,
+      email: norm(joinForm.email),
+      userName: `${joinForm.firstName} ${joinForm.lastName}`.trim(),
+    });
+
+    setHasJoined(true);
+    await loadEvent(); // ensure server saved collaborator before first edit
+  } catch (error) {
+    console.error('Error joining collaboration:', error);
+    alert(error.response?.data?.error || 'Failed to join collaboration');
+  }
+};
 
   const addCollaborator = async (e) => {
     e.preventDefault();
@@ -152,28 +195,87 @@ const CollaborativeEvent = ({ user }) => {
     }
   };
 
-  const toggleChecklistItem = async (index) => {
-    if (!event || !hasJoined) return;
+    // Share: invite by email, then ensure collab is enabled and expose the link
+ // --- inviteAndGetLink (Share modal submit) ---
+const inviteAndGetLink = async (e) => {
+  e.preventDefault();
+  if (!event) return;
+  const norm = (x) => (x || '').trim().toLowerCase();
 
-    const updatedChecklist = [...event.checklist];
-    updatedChecklist[index].completed = !updatedChecklist[index].completed;
-    
-    try {
-      const updateData = {
-        checklist: updatedChecklist,
-        userId: user?._id,
-        userName: user ? `${user.firstName} ${user.lastName}` : 'Anonymous User'
-      };
+  try {
+    // 1) Invite collaborator by email (stored lowercase on server)
+    await axios.post(`/api/events/${event._id}/collaborators`, {
+      ...invite,
+      email: norm(invite.email),
+    });
 
-      await axios.put(`/api/collaborate/${collaborationId}`, updateData);
-      setEvent(prev => ({ ...prev, checklist: updatedChecklist }));
-    } catch (error) {
-      console.error('Error updating checklist:', error);
-      alert('Failed to update checklist item');
-      // Revert the optimistic update
-      loadEvent();
+    // 2) Ensure collaboration is enabled and get link
+    if (!event.collaborationEnabled || !event.collaborationId) {
+      const resp = await axios.post(`/api/events/${event._id}/collaboration/enable`);
+      const { collaborationUrl } = resp.data;
+      setShareLink(collaborationUrl);
+      await loadEvent();
+    } else {
+      const base = window?.location?.origin || 'http://localhost:3000';
+      setShareLink(`${base.replace(/\/$/, '')}/collaborate/${event.collaborationId}`);
     }
-  };
+
+    alert('Invite sent. Only the invited email can join.');
+  } catch (err) {
+    console.error('Share/invite error', err);
+    alert(err.response?.data?.error || 'Failed to invite collaborator');
+  }
+};
+
+
+
+// --- toggleChecklistItem ---
+const toggleChecklistItem = async (index) => {
+  if (!event) return;
+
+  const norm = (x) => (x || '').trim().toLowerCase();
+
+  // Build a stable identity to send with the PUT
+  const emailToSend =
+    (user?.email && norm(user.email)) ||
+    (identity.email && norm(identity.email)) ||
+    (joinForm.email && norm(joinForm.email)) ||
+    '';
+
+  const userIdToSend = user?._id || identity.userId || null;
+  const userNameToSend =
+    (user && `${user.firstName} ${user.lastName}`.trim()) ||
+    identity.userName ||
+    (joinForm.firstName && joinForm.lastName
+      ? `${joinForm.firstName} ${joinForm.lastName}`.trim()
+      : 'Anonymous User');
+
+  if (!userIdToSend && !emailToSend) {
+    alert('You must join with your email before editing.');
+    return;
+  }
+
+  const updatedChecklist = [...(event.checklist || [])];
+  if (!updatedChecklist[index]) return;
+  updatedChecklist[index] = { ...updatedChecklist[index], completed: !updatedChecklist[index].completed };
+
+  try {
+    await axios.put(`/api/collaborate/${collaborationId}`, {
+      checklist: updatedChecklist,
+      userId: userIdToSend,
+      email: emailToSend,
+      userName: userNameToSend,
+    });
+
+    setEvent((prev) => ({ ...prev, checklist: updatedChecklist }));
+  } catch (error) {
+    console.error('Error updating checklist:', error);
+    alert(error.response?.data?.error || 'Failed to update checklist item');
+    // Revert by reloading from server
+    loadEvent();
+  }
+};
+
 
   const copyCollaborationLink = () => {
     const currentUrl = window.location.href;
@@ -337,11 +439,11 @@ const CollaborativeEvent = ({ user }) => {
             
             <div className="flex items-center space-x-3">
               <button
-                onClick={copyCollaborationLink}
+                onClick={() => setShowShare(true)}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
               >
                 <ShareIcon className="h-4 w-4 mr-2" />
-                Copy Link
+                Add Collaborator
               </button>
               
               <button
@@ -560,14 +662,20 @@ const CollaborativeEvent = ({ user }) => {
                 )}
                 
                 {/* Owner */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between p-2 bg-yellow-50 rounded">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Owner</p>
-                      <p className="text-xs text-gray-600">Event creator</p>
-                    </div>
-                    <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">Owner</span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-2 bg-yellow-50 rounded">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {event.ownerInfo
+                        ? `${event.ownerInfo.firstName} ${event.ownerInfo.lastName}`.trim()
+                        : 'Owner'}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {event.ownerInfo?.email || 'Event creator'}
+                    </p>
                   </div>
+                  <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">Owner</span>
+                </div>
                   
                   {/* Collaborators */}
                   {event.collaborators?.map((collaborator) => (
@@ -641,6 +749,89 @@ const CollaborativeEvent = ({ user }) => {
           </div>
         </div>
       </div>
+    {showShare && (
+  <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+    <div className="relative bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+      {/* X close button (top-right) */}
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={() => setShowShare(false)}
+        className="absolute top-3 right-3 p-1 rounded hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-vanderbilt-gold"
+      >
+        <XMarkIcon className="h-5 w-5 text-gray-600" />
+      </button>
+
+      <h3 className="text-lg font-semibold mb-4 pr-8">Share & Invite</h3>
+
+      <form onSubmit={inviteAndGetLink} className="space-y-3">
+        <input
+          className="w-full border rounded px-3 py-2"
+          placeholder="First name"
+          required
+          value={invite.firstName}
+          onChange={e => setInvite(s => ({ ...s, firstName: e.target.value }))}
+        />
+        <input
+          className="w-full border rounded px-3 py-2"
+          placeholder="Last name"
+          required
+          value={invite.lastName}
+          onChange={e => setInvite(s => ({ ...s, lastName: e.target.value }))}
+        />
+        <input
+          className="w-full border rounded px-3 py-2"
+          placeholder="Email"
+          type="email"
+          required
+          value={invite.email}
+          onChange={e => setInvite(s => ({ ...s, email: e.target.value }))}
+        />
+        <select
+          className="w-full border rounded px-3 py-2"
+          value={invite.permission}
+          onChange={e => setInvite(s => ({ ...s, permission: e.target.value }))}
+        >
+          <option value="edit">Can Edit</option>
+          <option value="view">View Only</option>
+          <option value="admin">Admin</option>
+        </select>
+
+        <div className="flex items-center justify-end pt-2">
+          <button type="submit" className="px-3 py-2 bg-vanderbilt-gold text-white rounded hover:bg-yellow-600">
+            Invite
+          </button>
+        </div>
+      </form>
+
+      {shareLink && (
+        <div className="mt-4 p-3 bg-gray-50 rounded">
+          {/* Hoverable, clickable link */}
+          <a
+            href={shareLink}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-blue-600 hover:underline break-all"
+            title="Open collaboration link"
+          >
+            {shareLink}
+          </a>
+
+          <div className="mt-2">
+            <button
+              className="px-3 py-1 border rounded hover:bg-gray-100"
+              onClick={copyShareLink}
+              type="button"
+            >
+              Copy Link
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
     </div>
   );
 };

@@ -1,18 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
-import { 
-  CalendarIcon, 
-  ClockIcon, 
-  CheckCircleIcon, 
-  TrashIcon,
+import {
+  CalendarIcon,
+  ChatBubbleLeftRightIcon,
+  CheckCircleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ClockIcon,
   InformationCircleIcon,
-  ChatBubbleLeftRightIcon,
+  PencilSquareIcon,
+  TrashIcon,
   UsersIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
+import axios from 'axios';
+import React, { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import remarkGfm from 'remark-gfm';
+
+const copyToClipboard = async (text, successMsg = 'Link copied to clipboard!') => {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert(successMsg);
+  } catch (e) {
+    console.error('Clipboard copy failed, showing manual prompt:', e);
+    // Fallback prompt so the user can copy manually
+    window.prompt('Copy this link:', text);
+  }
+};
 
 const SavedEvents = ({ user }) => {
   const { eventId } = useParams();
@@ -25,6 +39,8 @@ const SavedEvents = ({ user }) => {
   const [renderKey, setRenderKey] = useState(0);
   const [checklistOverrides, setChecklistOverrides] = useState({});
   const [shareModal, setShareModal] = useState({ open: false, link: '' });
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesText, setNotesText] = useState('');
   const [collaborationModal, setCollaborationModal] = useState({ open: false, link: '', eventId: null });
 
   // Get the effective completed state (considering overrides)
@@ -246,35 +262,89 @@ const SavedEvents = ({ user }) => {
 
   const getTips = (taskText, event) => {
     const tips = [];
+    const taskLower = taskText.toLowerCase();
+    const eventType = event?.eventType || 'other';
+    const isDayOfEvent = taskLower.includes('day of') || taskLower.includes('event day') || taskLower.includes('execution') || taskLower.includes('coordination') || taskLower.includes('arrive early');
     
-    if (taskText.includes('book') || taskText.includes('venue')) {
-      tips.push('Book popular venues 4-6 weeks in advance');
-      tips.push('Confirm AV equipment availability and setup requirements');
-      tips.push('Check venue capacity against expected attendance');
-    }
-    
-    if (taskText.includes('invitation')) {
-      tips.push('Send invitations 2-3 weeks before the event');
-      tips.push('Include RSVP deadline 1 week before event');
-      tips.push('Consider dietary restrictions and accessibility needs');
-    }
-    
-    if (taskText.includes('catering')) {
-      tips.push('Confirm final headcount 48 hours before event');
-      tips.push('Have backup food options for dietary restrictions');
-      tips.push('Coordinate delivery time with venue access');
-    }
-    
-    if (taskText.includes('setup')) {
-      tips.push('Arrive 2-3 hours early for complex setups');
-      tips.push('Test all AV equipment before guests arrive');
-      tips.push('Have backup plans for technical issues');
-    }
+    // Event-type-specific tips for day-of-event tasks
+    if (isDayOfEvent) {
+      if (eventType === 'mixer') {
+        tips.push('Set up name tags and welcome station 30 minutes before start');
+        tips.push('Prepare icebreaker activities and networking materials');
+        tips.push('Coordinate refreshments station with catering team');
+        tips.push('Have a greeting area with event information');
+      } else if (eventType === 'concert') {
+        tips.push('Conduct sound check 2 hours before doors open');
+        tips.push('Coordinate with performers for arrival and setup times');
+        tips.push('Set up ticketing/check-in station near entrance');
+        tips.push('Test stage lighting and audio equipment');
+        tips.push('Coordinate security and crowd management');
+      } else if (eventType === 'workshop') {
+        tips.push('Set up registration table 45 minutes before start');
+        tips.push('Prepare handouts and materials at each seat');
+        tips.push('Test presentation equipment and screens');
+        tips.push('Arrange breakout rooms if needed');
+        tips.push('Brief facilitators on agenda and timing');
+      } else if (eventType === 'lecture') {
+        tips.push('Set up podium and microphone 1 hour before');
+        tips.push('Test recording equipment if recording');
+        tips.push('Prepare Q&A setup and microphones for audience');
+        tips.push('Test slides and presentation technology');
+        tips.push('Prepare speaker introduction materials');
+      } else if (eventType === 'meeting') {
+        tips.push('Distribute agenda and materials 15 minutes before');
+        tips.push('Set up conference call or video link if remote participants');
+        tips.push('Prepare document sharing platform');
+        tips.push('Configure room layout for meeting type');
+        tips.push('Set up note-taking system');
+      } else if (eventType === 'social') {
+        tips.push('Set up decorations and ambiance 1 hour before');
+        tips.push('Prepare entertainment area and equipment');
+        tips.push('Set up photo booth or activity stations');
+        tips.push('Coordinate guest check-in and welcome');
+        tips.push('Prepare refreshment stations throughout venue');
+      } else if (eventType === 'academic') {
+        tips.push('Set up presentation materials and research displays');
+        tips.push('Prepare discussion prompts and evaluation forms');
+        tips.push('Test all technology and accessibility features');
+        tips.push('Arrange seating for optimal discussion');
+        tips.push('Prepare handouts and reference materials');
+      } else {
+        tips.push('Arrive 2-3 hours early for complex setups');
+        tips.push('Test all equipment before guests arrive');
+        tips.push('Have backup plans for technical issues');
+      }
+    } else {
+      // General tips for non-day-of-event tasks
+      if (taskLower.includes('book') || taskLower.includes('venue')) {
+        tips.push('Book popular venues 4-6 weeks in advance');
+        tips.push('Confirm AV equipment availability and setup requirements');
+        tips.push('Check venue capacity against expected attendance');
+      }
+      
+      if (taskLower.includes('invitation')) {
+        tips.push('Send invitations 2-3 weeks before the event');
+        tips.push('Include RSVP deadline 1 week before event');
+        tips.push('Consider dietary restrictions and accessibility needs');
+      }
+      
+      if (taskLower.includes('catering')) {
+        tips.push('Confirm final headcount 48 hours before event');
+        tips.push('Have backup food options for dietary restrictions');
+        tips.push('Coordinate delivery time with venue access');
+      }
+      
+      if (taskLower.includes('setup')) {
+        tips.push('Arrive 2-3 hours early for complex setups');
+        tips.push('Test all AV equipment before guests arrive');
+        tips.push('Have backup plans for technical issues');
+      }
 
-    if (taskText.includes('budget')) {
-      tips.push('Include 10-15% buffer for unexpected costs');
-      tips.push('Get written quotes from all vendors');
-      tips.push('Track expenses in a spreadsheet throughout planning');
+      if (taskLower.includes('budget')) {
+        tips.push('Include 10-15% buffer for unexpected costs');
+        tips.push('Get written quotes from all vendors');
+        tips.push('Track expenses in a spreadsheet throughout planning');
+      }
     }
     
     return tips;
@@ -283,8 +353,13 @@ const SavedEvents = ({ user }) => {
   const getResources = (taskText) => {
     const resources = [];
     
-    if (taskText.includes('venue') || taskText.includes('book')) {
+    if (taskText.includes('venue') || taskText.includes('book') || taskText.includes('reserve') || taskText.includes('space')) {
       resources.push('Vanderbilt Event Services: (615) 322-2471');
+      resources.push({
+        type: 'link',
+        text: 'EMS Web App - Book a Space',
+        url: 'https://emscampus.app.vanderbilt.edu/EMSWebApp/'
+      });
       resources.push('Campus venue booking system');
       resources.push('Facilities Management for setup requirements');
     }
@@ -316,23 +391,29 @@ const SavedEvents = ({ user }) => {
     const dueDate = new Date(task.dueDate);
     const eventDate = new Date(event.eventDate);
     const daysUntilEvent = Math.ceil((eventDate - dueDate) / (1000 * 60 * 60 * 24));
+    const timingType = task.timingType || 'recommended';
+    const isRequired = timingType === 'required';
     
     const taskLower = task.task.toLowerCase();
     
+    let reason = '';
     if (taskLower.includes('venue')) {
-      return `Booking ${daysUntilEvent} days early ensures availability and allows time for backup options if needed.`;
-    }
-    if (taskLower.includes('invitation')) {
-      return `Sending invitations ${daysUntilEvent} days early gives guests adequate notice while maintaining interest.`;
-    }
-    if (taskLower.includes('catering')) {
-      return `Finalizing catering ${daysUntilEvent} days early allows for accurate headcount and food preparation.`;
-    }
-    if (taskLower.includes('setup')) {
-      return `Setting up ${daysUntilEvent} days early provides buffer time for troubleshooting any issues.`;
+      reason = `Booking ${daysUntilEvent} days early ensures availability and allows time for backup options if needed.`;
+    } else if (taskLower.includes('invitation')) {
+      reason = `Sending invitations ${daysUntilEvent} days early gives guests adequate notice while maintaining interest.`;
+    } else if (taskLower.includes('catering')) {
+      reason = `Finalizing catering ${daysUntilEvent} days early allows for accurate headcount and food preparation.`;
+    } else if (taskLower.includes('setup')) {
+      reason = `Setting up ${daysUntilEvent} days early provides buffer time for troubleshooting any issues.`;
+    } else {
+      reason = `This timeline ensures adequate preparation time for a successful event.`;
     }
     
-    return `This timeline ensures adequate preparation time for a successful event.`;
+    if (isRequired) {
+      return `${reason} This is a required deadline based on policy or contract requirements.`;
+    } else {
+      return `${reason} This is a recommended timeline for optimal planning.`;
+    }
   };
 
   useEffect(() => {
@@ -354,6 +435,8 @@ const SavedEvents = ({ user }) => {
   useEffect(() => {
     setExpandedTasks(new Set());
     setChecklistOverrides({});
+    setEditingNotes(false);
+    setNotesText(selectedEvent?.notes || '');
   }, [selectedEvent]);
 
   const fetchEvents = async () => {
@@ -663,13 +746,7 @@ const SavedEvents = ({ user }) => {
                         >
                           View
                         </button>
-                        <button
-                          onClick={() => shareEvent(event)}
-                          className="px-3 py-1 text-xs rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
-                          title="Copy shareable link"
-                        >
-                          Share
-                        </button>
+      
                         {event.collaborationEnabled ? (
                           <div className="flex flex-col space-y-1">
                             <button
@@ -678,14 +755,14 @@ const SavedEvents = ({ user }) => {
                               title="Open collaborative editing"
                             >
                               <UsersIcon className="h-3 w-3 inline mr-1" />
-                              Collaborate
+                              Enable Collaboration
                             </button>
                             <button
                               onClick={() => disableCollaboration(event)}
                               className="px-3 py-1 text-xs rounded-md border border-red-300 text-red-700 bg-red-50 hover:bg-red-100"
                               title="Disable collaboration"
                             >
-                              Disable
+                              Disable Collaboration
                             </button>
                           </div>
                         ) : (
@@ -733,13 +810,16 @@ const SavedEvents = ({ user }) => {
                     </div>
                     
                     {/* Notifications toggle */}
-                    <div className="mt-4 flex items-center space-x-2">
-                      <label className="text-sm text-gray-700">Email reminders (5 days before due):</label>
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <label className="text-sm text-gray-700">Email reminders:</label>
                       <button
                         onClick={async () => {
                           try {
                             const response = await axios.put(`/api/events/${selectedEvent._id}`, {
-                              notifications: { emailOptIn: !(selectedEvent.notifications?.emailOptIn !== false) }
+                              notifications: { 
+                                emailOptIn: !(selectedEvent.notifications?.emailOptIn !== false),
+                                reminderDays: selectedEvent.notifications?.reminderDays || 5
+                              }
                             });
                             setSelectedEvent(response.data);
                             setEvents(prev => prev.map(e => e._id === response.data._id ? response.data : e));
@@ -751,6 +831,38 @@ const SavedEvents = ({ user }) => {
                       >
                         {selectedEvent.notifications?.emailOptIn !== false ? 'On' : 'Off'}
                       </button>
+                      {selectedEvent.notifications?.emailOptIn !== false && (
+                        <>
+                          <label className="text-sm text-gray-700">Days before due:</label>
+                          <select
+                            value={selectedEvent.notifications?.reminderDays || 5}
+                            onChange={async (e) => {
+                              try {
+                                const reminderDays = parseInt(e.target.value);
+                                const response = await axios.put(`/api/events/${selectedEvent._id}`, {
+                                  notifications: { 
+                                    emailOptIn: true,
+                                    reminderDays: reminderDays
+                                  }
+                                });
+                                setSelectedEvent(response.data);
+                                setEvents(prev => prev.map(ev => ev._id === response.data._id ? response.data : ev));
+                              } catch (error) {
+                                alert('Failed to update reminder timing');
+                              }
+                            }}
+                            className="px-2 py-1 text-sm border border-gray-300 rounded-md bg-white"
+                          >
+                            <option value="1">1 day</option>
+                            <option value="2">2 days</option>
+                            <option value="3">3 days</option>
+                            <option value="5">5 days</option>
+                            <option value="7">7 days</option>
+                            <option value="10">10 days</option>
+                            <option value="14">14 days</option>
+                          </select>
+                        </>
+                      )}
                     </div>
 
                     {/* Continue Chat Button */}
@@ -783,7 +895,173 @@ const SavedEvents = ({ user }) => {
                     </p>
                   </div>
                 )}
+
+                {/* Contact Information */}
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h3 className="font-medium text-gray-900 mb-3">Contact Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-700">Event Services:</span>
+                      <div className="mt-1">
+                        <a href="mailto:events@vanderbilt.edu" className="text-blue-600 hover:underline">events@vanderbilt.edu</a>
+                        <span className="text-gray-500 ml-2">(615) 322-2471</span>
+                      </div>
+                    </div>
+                    {(selectedEvent.cateringRequired || selectedEvent.eventType === 'mixer' || selectedEvent.eventType === 'social') && (
+                      <div>
+                        <span className="font-medium text-gray-700">Catering:</span>
+                        <div className="mt-1">
+                          <a href="mailto:catering@vanderbilt.edu" className="text-blue-600 hover:underline">catering@vanderbilt.edu</a>
+                          <span className="text-gray-500 ml-2">(615) 322-2641</span>
+                        </div>
+                      </div>
+                    )}
+                    {(selectedEvent.requiresAV || selectedEvent.eventType === 'lecture' || selectedEvent.eventType === 'workshop' || selectedEvent.eventType === 'concert') && (
+                      <div>
+                        <span className="font-medium text-gray-700">IT/AV Support:</span>
+                        <div className="mt-1">
+                          <a href="mailto:it@vanderbilt.edu" className="text-blue-600 hover:underline">it@vanderbilt.edu</a>
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <span className="font-medium text-gray-700">Finance:</span>
+                      <div className="mt-1">
+                        <a href="mailto:finance@vanderbilt.edu" className="text-blue-600 hover:underline">finance@vanderbilt.edu</a>
+                        <span className="text-gray-500 ml-2">(615) 322-3488</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Freedom of Expression Policy Information */}
+                {selectedEvent.potentiallyControversial && (
+                  <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+                    <h3 className="font-medium text-gray-900 mb-3 flex items-center">
+                      <InformationCircleIcon className="h-5 w-5 mr-2 text-amber-600" />
+                      Freedom of Expression Policy Information
+                    </h3>
+                    <div className="text-sm text-gray-700 space-y-3">
+                      <p className="font-medium">
+                        Since this event may be considered controversial, please review Vanderbilt's Freedom of Expression policies:
+                      </p>
+                      
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-1">Key Policy Points:</h4>
+                        <ul className="list-disc list-inside space-y-1 ml-2">
+                          <li>Vanderbilt is committed to freedom of expression and will maintain conditions of freedom of inquiry, thought, and discussion on campus.</li>
+                          <li>Students are expected to be respectful and contribute positively to orderly and civil exchange of diverse ideas.</li>
+                          <li>Freedom of expression applies even when expression challenges the beliefs of others or may be deemed disagreeable or offensive.</li>
+                          <li>When ideas conflict, the response should be to engage in discussion, debate, and mutually respectful dialogue.</li>
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-1">Planning Requirements:</h4>
+                        <ul className="list-disc list-inside space-y-1 ml-2">
+                          <li>Contact the Vice Provost and Dean of Students at least 48 hours prior to the event for assistance with planning.</li>
+                          <li>Demonstrations, Protests, and Counterprotests should be submitted with time, date, and location details.</li>
+                          <li>The University may require changes to time, location, or manner if the activity would disrupt campus operations, impede traffic, violate policies, or infringe on others' rights.</li>
+                          <li>Only Registered Student Organizations and University departments may reserve space for Expression activities on campus.</li>
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-1">Prohibited Locations:</h4>
+                        <ul className="list-disc list-inside space-y-1 ml-2">
+                          <li>Private offices, residences, research laboratories, computer centers</li>
+                          <li>Areas with valuable or sensitive materials, collections, or records</li>
+                          <li>Classrooms, practice rooms, or spaces where academic courses are being held</li>
+                          <li>Residential areas during quiet hours</li>
+                          <li>Student Health Center, Counseling Center, and other administrative offices where student privacy is paramount</li>
+                        </ul>
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-amber-300">
+                        <p className="text-xs text-gray-600">
+                          <strong>Note:</strong> Organizers and participants are responsible for knowing and abiding by University policies as well as local, state, and federal laws. 
+                          The University reserves the right to relocate or terminate Expression that disrupts campus operations, impedes traffic, violates policies, or infringes on others' rights.
+                        </p>
+                        <a 
+                          href="https://studenthandbook.vanderbilt.edu/administrative-policies#882" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline text-xs mt-2 inline-block"
+                        >
+                          View Full Freedom of Expression Policy →
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
+
+               {/* Notes Section */}
+              <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-gray-900">Notes</h2>
+                  {!editingNotes && (
+                    <button
+                      onClick={() => {
+                        setEditingNotes(true);
+                        setNotesText(selectedEvent.notes || '');
+                      }}
+                      className="inline-flex items-center px-3 py-1 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      <PencilSquareIcon className="h-4 w-4 mr-1" />
+                      {selectedEvent.notes ? 'Edit Notes' : 'Add Notes'}
+                    </button>
+                  )}
+                </div>
+                {editingNotes ? (
+                  <div>
+                    <textarea
+                      value={notesText}
+                      onChange={(e) => setNotesText(e.target.value)}
+                      placeholder="Add your notes about this event..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-vanderbilt-gold focus:border-vanderbilt-gold resize-none"
+                      rows="6"
+                    />
+                    <div className="mt-3 flex items-center justify-end space-x-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const response = await axios.put(`/api/events/${selectedEvent._id}`, {
+                              notes: notesText
+                            });
+                            setSelectedEvent(response.data);
+                            setEvents(prev => prev.map(e => e._id === response.data._id ? response.data : e));
+                            setEditingNotes(false);
+                          } catch (error) {
+                            alert('Failed to save notes');
+                          }
+                        }}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingNotes(false);
+                          setNotesText(selectedEvent.notes || '');
+                        }}
+                        className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 p-4 rounded-lg min-h-[100px]">
+                    {selectedEvent.notes ? (
+                      <p className="text-gray-700 whitespace-pre-line">{selectedEvent.notes}</p>
+                    ) : (
+                      <p className="text-gray-400 italic">No notes yet. Click "Add Notes" to add your own notes about this event.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
 
               {/* Checklist */}
               {selectedEvent.checklist && selectedEvent.checklist.length > 0 && (() => {
@@ -877,11 +1155,20 @@ const SavedEvents = ({ user }) => {
                                     <p className="text-sm text-gray-500 mt-1">{item.description}</p>
                                   )}
                                   
-                                  <div className="flex items-center space-x-4 mt-2">
+                                  <div className="flex items-center space-x-4 mt-2 flex-wrap gap-2">
                                     {item.dueDate && (
                                       <p className="text-xs text-gray-400">
                                         Due: {new Date(item.dueDate).toLocaleDateString()}
                                       </p>
+                                    )}
+                                    {item.timingType && (
+                                      <span className={`px-2 py-1 text-xs rounded-full ${
+                                        item.timingType === 'required' 
+                                          ? 'bg-red-100 text-red-700 border border-red-200' 
+                                          : 'bg-blue-100 text-blue-700 border border-blue-200'
+                                      }`}>
+                                        {item.timingType === 'required' ? 'Required' : 'Recommended'}
+                                      </span>
                                     )}
                                     {item.priority && item.priority !== 'medium' && (
                                       <span className={`px-2 py-1 text-xs rounded-full ${getPriorityColor(item.priority)}`}>
@@ -896,6 +1183,7 @@ const SavedEvents = ({ user }) => {
                               {expandedTasks.has(item._id || `${index}-${item.task}`) && (() => {
                                 const taskDetails = getTaskDetails(item, selectedEvent);
                                 if (!taskDetails) return null;
+                                const taskLower = item.task.toLowerCase();
                                 
                                 return (
                                   <div className="ml-8 pb-4 border-l border-gray-200 pl-4">
@@ -957,10 +1245,40 @@ const SavedEvents = ({ user }) => {
                                             {taskDetails.resources.map((resource, resourceIndex) => (
                                               <li key={resourceIndex} className="flex items-start">
                                                 <span className="text-purple-600 mr-2">•</span>
-                                                {resource}
+                                                {typeof resource === 'object' && resource.type === 'link' ? (
+                                                  <a 
+                                                    href={resource.url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 hover:underline"
+                                                  >
+                                                    {resource.text}
+                                                  </a>
+                                                ) : (
+                                                  resource
+                                                )}
                                               </li>
                                             ))}
                                           </ul>
+                                        </div>
+                                      )}
+
+                                      {/* Video Tutorial for Booking Tasks */}
+                                      {(taskLower.includes('venue') || taskLower.includes('book') || taskLower.includes('reserve') || taskLower.includes('space')) && (
+                                        <div>
+                                          <h4 className="flex items-center text-sm font-medium text-gray-900 mb-2">
+                                            <InformationCircleIcon className="h-4 w-4 mr-1 text-blue-600" />
+                                            Video Tutorial: How to Book a Space
+                                          </h4>
+                                          <div className="mt-2 relative w-full" style={{ paddingBottom: '56.25%' }}>
+                                            <iframe
+                                              src="https://cdnapisec.kaltura.com/html5/html5lib/v2.91/mwEmbedFrame.php/p/1821441/uiconf_id/41615771/entry_id/1_ecu074uq?wid=_1821441&iframeembed=true&playerId=kaltura_player&entry_id=1_ecu074uq&flashvars%5BstreamerType%5D=auto&flashvars%5BlocalizationCode%5D=en&flashvars%5BleadWithHTML5%5D=true&flashvars%5BsideBarContainer.plugin%5D=true&flashvars%5BsideBarContainer.position%5D=left&flashvars%5BsideBarContainer.clickToClose%5D=true&flashvars%5Bchapters.plugin%5D=true&flashvars%5Bchapters.layout%5D=vertical&flashvars%5Bchapters.thumbnailRotator%5D=false&flashvars%5BstreamSelector.plugin%5D=true&flashvars%5BEmbedPlayer.SpinnerTarget%5D=videoHolder&flashvars%5BdualScreen.plugin%5D=true&flashvars%5BKaltura.addCrossoriginToIframe%5D=true&&wid=1_h96d3gnv"
+                                              className="absolute top-0 left-0 w-full h-full rounded-lg"
+                                              frameBorder="0"
+                                              allowFullScreen
+                                              title="How to Book a Space at Vanderbilt"
+                                            />
+                                          </div>
                                         </div>
                                       )}
 
@@ -993,9 +1311,11 @@ const SavedEvents = ({ user }) => {
                 <div className="bg-white rounded-lg shadow-sm p-6">
                   <h2 className="text-lg font-semibold text-gray-900 mb-4">Original Chat Message</h2>
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    <p className="text-gray-700 whitespace-pre-line">
-                      {selectedEvent.sourceMessage.content}
-                    </p>
+                    <div className="prose prose-sm max-w-none break-words">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+                        {selectedEvent.sourceMessage.content}
+                      </ReactMarkdown>
+                    </div>
                     <p className="text-sm text-gray-500 mt-2">
                       Saved on: {new Date(selectedEvent.sourceMessage.timestamp || selectedEvent.createdAt).toLocaleString()}
                     </p>
@@ -1030,7 +1350,7 @@ const SavedEvents = ({ user }) => {
               />
               <div className="mt-3 flex items-center justify-end space-x-2">
                 <button
-                  onClick={async () => { try { await navigator.clipboard.writeText(shareModal.link); } catch {} }}
+                  onClick={() => copyToClipboard(shareModal.link)}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md"
                 >
                   Copy link
@@ -1071,14 +1391,7 @@ const SavedEvents = ({ user }) => {
               />
               <div className="mt-3 flex items-center justify-end space-x-2">
                 <button
-                  onClick={async () => { 
-                    try { 
-                      await navigator.clipboard.writeText(collaborationModal.link);
-                      alert('Collaboration link copied to clipboard!');
-                    } catch (e) {
-                      console.error('Failed to copy:', e);
-                    }
-                  }}
+                  onClick={() => copyToClipboard(collaborationModal.link)}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md"
                 >
                   Copy link
