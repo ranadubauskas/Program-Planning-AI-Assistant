@@ -5,10 +5,14 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ClockIcon,
+  DocumentTextIcon,
   InformationCircleIcon,
   PencilSquareIcon,
+  ShareIcon,
+  SpeakerWaveIcon,
   TrashIcon,
-  UsersIcon
+  UsersIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import axios from 'axios';
@@ -42,6 +46,24 @@ const SavedEvents = ({ user }) => {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesText, setNotesText] = useState('');
   const [collaborationModal, setCollaborationModal] = useState({ open: false, link: '', eventId: null });
+  const [communicationsModal, setCommunicationsModal] = useState({ 
+    open: false, 
+    eventId: null, 
+    loading: false,
+    generatedContent: null,
+    error: null
+  });
+  const [pastCommunicationsModal, setPastCommunicationsModal] = useState({
+    open: false,
+    eventId: null,
+    loading: false,
+    communications: [],
+    error: null,
+    currentPage: 1,
+    totalPages: 1,
+    totalCount: 0,
+    filters: { type: 'all', tone: 'all' }
+  });
 
   // Get the effective completed state (considering overrides)
   const getEffectiveCompletedState = (item, originalIndex) => {
@@ -682,6 +704,100 @@ const SavedEvents = ({ user }) => {
     });
   };
 
+  const handleGenerateCommunications = (event) => {
+    setCommunicationsModal({
+      open: true,
+      eventId: event._id,
+      loading: false,
+      generatedContent: null,
+      error: null
+    });
+  };
+
+  const generateCommunications = async (communicationType, tone, customInstructions) => {
+    setCommunicationsModal(prev => ({ ...prev, loading: true, error: null }));
+    
+    try {
+      const response = await axios.post(`/api/events/${communicationsModal.eventId}/generate-communications`, {
+        communicationType,
+        tone,
+        customInstructions
+      });
+
+      setCommunicationsModal(prev => ({
+        ...prev,
+        loading: false,
+        generatedContent: response.data
+      }));
+    } catch (error) {
+      console.error('Error generating communications:', error);
+      setCommunicationsModal(prev => ({
+        ...prev,
+        loading: false,
+        error: error.response?.data?.error || 'Failed to generate communications'
+      }));
+    }
+  };
+
+  const copyToClipboardCommunications = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      alert('Content copied to clipboard!');
+    } catch (e) {
+      console.error('Clipboard copy failed:', e);
+      // Fallback prompt so the user can copy manually
+      window.prompt('Copy this content:', text);
+    }
+  };
+
+  const handleViewPastCommunications = (event) => {
+    setPastCommunicationsModal({
+      open: true,
+      eventId: event._id,
+      loading: false,
+      communications: [],
+      error: null,
+      currentPage: 1,
+      totalPages: 1,
+      totalCount: 0,
+      filters: { type: 'all', tone: 'all' }
+    });
+    // Load communications when modal opens
+    loadPastCommunications(event._id, 1, 'all', 'all');
+  };
+
+  const loadPastCommunications = async (eventId, page = 1, type = 'all', tone = 'all') => {
+    setPastCommunicationsModal(prev => ({ ...prev, loading: true, error: null }));
+    
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '10'
+      });
+      if (type !== 'all') params.append('type', type);
+      if (tone !== 'all') params.append('tone', tone);
+
+      const response = await axios.get(`/api/events/${eventId}/communications?${params}`);
+      
+      setPastCommunicationsModal(prev => ({
+        ...prev,
+        loading: false,
+        communications: response.data.communications,
+        currentPage: response.data.currentPage,
+        totalPages: response.data.totalPages,
+        totalCount: response.data.totalCount,
+        filters: { type, tone }
+      }));
+    } catch (error) {
+      console.error('Error loading past communications:', error);
+      setPastCommunicationsModal(prev => ({
+        ...prev,
+        loading: false,
+        error: error.response?.data?.error || 'Failed to load past communications'
+      }));
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -865,14 +981,30 @@ const SavedEvents = ({ user }) => {
                       )}
                     </div>
 
-                    {/* Continue Chat Button */}
-                    <div className="mt-4">
+                    {/* Action Buttons */}
+                    <div className="mt-4 flex flex-wrap gap-3">
                       <button
                         onClick={() => handleContinueChat(selectedEvent)}
                         className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                       >
                         <ChatBubbleLeftRightIcon className="h-4 w-4 mr-2" />
                         Continue Chat
+                      </button>
+                      
+                      <button
+                        onClick={() => handleGenerateCommunications(selectedEvent)}
+                        className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                      >
+                        <SpeakerWaveIcon className="h-4 w-4 mr-2" />
+                        Generate Communications
+                      </button>
+                      
+                      <button
+                        onClick={() => handleViewPastCommunications(selectedEvent)}
+                        className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                      >
+                        <DocumentTextIcon className="h-4 w-4 mr-2" />
+                        Past Communications
                       </button>
                     </div>
                   </div>
@@ -1413,6 +1545,484 @@ const SavedEvents = ({ user }) => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Communications Generation Modal */}
+      {communicationsModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">Generate Communications</h3>
+                <button
+                  onClick={() => setCommunicationsModal({ open: false, eventId: null, loading: false, generatedContent: null, error: null })}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              {!communicationsModal.generatedContent ? (
+                <CommunicationTypeSelector 
+                  onGenerate={generateCommunications}
+                  loading={communicationsModal.loading}
+                  error={communicationsModal.error}
+                />
+              ) : (
+                <CommunicationResult 
+                  content={communicationsModal.generatedContent}
+                  onCopy={copyToClipboardCommunications}
+                  onGenerateNew={() => setCommunicationsModal(prev => ({ ...prev, generatedContent: null, error: null }))}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Past Communications Modal */}
+      {pastCommunicationsModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">Past Communications</h3>
+                <button
+                  onClick={() => setPastCommunicationsModal({ 
+                    open: false, 
+                    eventId: null, 
+                    loading: false, 
+                    communications: [], 
+                    error: null,
+                    currentPage: 1,
+                    totalPages: 1,
+                    totalCount: 0,
+                    filters: { type: 'all', tone: 'all' }
+                  })}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              <PastCommunicationsView 
+                modal={pastCommunicationsModal}
+                onLoadMore={(page, type, tone) => loadPastCommunications(pastCommunicationsModal.eventId, page, type, tone)}
+                onCopy={copyToClipboardCommunications}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Communication Type Selector Component
+const CommunicationTypeSelector = ({ onGenerate, loading, error }) => {
+  const [communicationType, setCommunicationType] = useState('');
+  const [tone, setTone] = useState('professional');
+  const [customInstructions, setCustomInstructions] = useState('');
+
+  const communicationTypes = [
+    { value: 'social-media-facebook', label: 'Facebook Post', description: 'Engaging post for Facebook (up to 2,200 characters)' },
+    { value: 'social-media-twitter', label: 'Twitter/X Post', description: 'Concise post for Twitter/X (up to 280 characters)' },
+    { value: 'social-media-linkedin', label: 'LinkedIn Post', description: 'Professional post for LinkedIn (up to 3,000 characters)' },
+    { value: 'social-media-instagram', label: 'Instagram Post', description: 'Visual-focused post for Instagram (up to 2,200 characters)' },
+    { value: 'email-invitation', label: 'Email Invitation', description: 'Formal email invitation with subject and body' },
+    { value: 'email-reminder', label: 'Email Reminder', description: 'Friendly reminder email for attendees' },
+    { value: 'email-followup', label: 'Email Follow-up', description: 'Thank you and follow-up email after the event' },
+    { value: 'press-release', label: 'Press Release', description: 'Formal press release following AP style' },
+    { value: 'announcement', label: 'General Announcement', description: 'Versatile announcement for multiple channels' }
+  ];
+
+  const tones = [
+    { value: 'professional', label: 'Professional', description: 'Formal tone for academic and business settings' },
+    { value: 'friendly', label: 'Friendly', description: 'Warm and approachable tone' },
+    { value: 'exciting', label: 'Exciting', description: 'Enthusiastic tone to build anticipation' },
+    { value: 'informative', label: 'Informative', description: 'Clear, factual tone focused on details' }
+  ];
+
+  const handleGenerate = () => {
+    if (!communicationType) {
+      alert('Please select a communication type');
+      return;
+    }
+    onGenerate(communicationType, tone, customInstructions);
+  };
+
+  return (
+    <div className="space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
+          <p className="font-medium">Error generating communications:</p>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {/* Communication Type Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-3">
+          Select Communication Type *
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {communicationTypes.map((type) => (
+            <div
+              key={type.value}
+              className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                communicationType === type.value
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+              onClick={() => setCommunicationType(type.value)}
+            >
+              <div className="flex items-center">
+                <input
+                  type="radio"
+                  name="communicationType"
+                  value={type.value}
+                  checked={communicationType === type.value}
+                  onChange={(e) => setCommunicationType(e.target.value)}
+                  className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                />
+                <label className="ml-3 block">
+                  <div className="text-sm font-medium text-gray-900">{type.label}</div>
+                  <div className="text-xs text-gray-500">{type.description}</div>
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tone Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-3">
+          Select Tone
+        </label>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {tones.map((toneOption) => (
+            <div
+              key={toneOption.value}
+              className={`border rounded-lg p-3 cursor-pointer transition-colors ${
+                tone === toneOption.value
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+              onClick={() => setTone(toneOption.value)}
+            >
+              <div className="text-center">
+                <input
+                  type="radio"
+                  name="tone"
+                  value={toneOption.value}
+                  checked={tone === toneOption.value}
+                  onChange={(e) => setTone(e.target.value)}
+                  className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                />
+                <div className="mt-2">
+                  <div className="text-sm font-medium text-gray-900">{toneOption.label}</div>
+                  <div className="text-xs text-gray-500">{toneOption.description}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Custom Instructions */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Custom Instructions (Optional)
+        </label>
+        <textarea
+          value={customInstructions}
+          onChange={(e) => setCustomInstructions(e.target.value)}
+          placeholder="Add any specific requirements, key messages, or special instructions..."
+          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500"
+          rows="4"
+        />
+      </div>
+
+      {/* Generate Button */}
+      <div className="flex justify-end">
+        <button
+          onClick={handleGenerate}
+          disabled={loading || !communicationType}
+          className={`inline-flex items-center px-6 py-2 text-sm font-medium rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+            loading || !communicationType
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-500'
+          }`}
+        >
+          {loading ? (
+            <>
+              <div className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full"></div>
+              Generating...
+            </>
+          ) : (
+            <>
+              <SpeakerWaveIcon className="h-4 w-4 mr-2" />
+              Generate Content
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Communication Result Component
+const CommunicationResult = ({ content, onCopy, onGenerateNew }) => {
+  const getTypeLabel = (type) => {
+    const labels = {
+      'social-media-facebook': 'Facebook Post',
+      'social-media-twitter': 'Twitter/X Post',
+      'social-media-linkedin': 'LinkedIn Post',
+      'social-media-instagram': 'Instagram Post',
+      'email-invitation': 'Email Invitation',
+      'email-reminder': 'Email Reminder',
+      'email-followup': 'Email Follow-up',
+      'press-release': 'Press Release',
+      'announcement': 'General Announcement'
+    };
+    return labels[type] || type;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="border-b border-gray-200 pb-4">
+        <h4 className="text-lg font-medium text-gray-900 mb-2">
+          Generated {getTypeLabel(content.communicationType)}
+        </h4>
+        <div className="flex items-center space-x-4 text-sm text-gray-500">
+          <span>Tone: {content.tone}</span>
+          <span>•</span>
+          <span>Generated: {new Date(content.generatedAt).toLocaleString()}</span>
+          <span>•</span>
+          <span>{content.characterCount} characters</span>
+          {content.characterLimit && (
+            <>
+              <span>•</span>
+              <span className={content.withinLimit ? 'text-green-600' : 'text-red-600'}>
+                {content.withinLimit ? 'Within limit' : 'Exceeds limit'} ({content.characterLimit} max)
+              </span>
+            </>
+          )}
+        </div>
+        {content.warning && (
+          <div className="mt-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+            ⚠️ {content.warning}
+          </div>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <pre className="whitespace-pre-wrap text-sm text-gray-900 font-mono">
+          {content.content}
+        </pre>
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-3 justify-end">
+        <button
+          onClick={onGenerateNew}
+          className="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
+        >
+          <DocumentTextIcon className="h-4 w-4 mr-2" />
+          Generate New
+        </button>
+        <button
+          onClick={() => onCopy(content.content)}
+          className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg"
+        >
+          <ShareIcon className="h-4 w-4 mr-2" />
+          Copy to Clipboard
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Past Communications View Component
+const PastCommunicationsView = ({ modal, onLoadMore, onCopy }) => {
+  const getTypeLabel = (type) => {
+    const labels = {
+      'social-media-facebook': 'Facebook Post',
+      'social-media-twitter': 'Twitter/X Post',
+      'social-media-linkedin': 'LinkedIn Post',
+      'social-media-instagram': 'Instagram Post',
+      'email-invitation': 'Email Invitation',
+      'email-reminder': 'Email Reminder',
+      'email-followup': 'Email Follow-up',
+      'press-release': 'Press Release',
+      'announcement': 'General Announcement'
+    };
+    return labels[type] || type;
+  };
+
+  const handleFilterChange = (filterType, value) => {
+    const newFilters = { ...modal.filters, [filterType]: value };
+    onLoadMore(1, newFilters.type, newFilters.tone);
+  };
+
+  const handlePageChange = (newPage) => {
+    onLoadMore(newPage, modal.filters.type, modal.filters.tone);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <h4 className="text-sm font-medium text-gray-900 mb-3">Filter Communications</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Communication Type
+            </label>
+            <select
+              value={modal.filters.type}
+              onChange={(e) => handleFilterChange('type', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm"
+            >
+              <option value="all">All Types</option>
+              <option value="social-media-facebook">Facebook Posts</option>
+              <option value="social-media-twitter">Twitter/X Posts</option>
+              <option value="social-media-linkedin">LinkedIn Posts</option>
+              <option value="social-media-instagram">Instagram Posts</option>
+              <option value="email-invitation">Email Invitations</option>
+              <option value="email-reminder">Email Reminders</option>
+              <option value="email-followup">Email Follow-ups</option>
+              <option value="press-release">Press Releases</option>
+              <option value="announcement">Announcements</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tone
+            </label>
+            <select
+              value={modal.filters.tone}
+              onChange={(e) => handleFilterChange('tone', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm"
+            >
+              <option value="all">All Tones</option>
+              <option value="professional">Professional</option>
+              <option value="friendly">Friendly</option>
+              <option value="exciting">Exciting</option>
+              <option value="informative">Informative</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Results Summary */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-600">
+          Showing {modal.communications.length} of {modal.totalCount} communications
+        </p>
+      </div>
+
+      {/* Error Display */}
+      {modal.error && (
+        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
+          <p className="font-medium">Error loading communications:</p>
+          <p>{modal.error}</p>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {modal.loading && (
+        <div className="flex justify-center py-8">
+          <div className="animate-spin h-8 w-8 border-2 border-purple-600 border-t-transparent rounded-full"></div>
+        </div>
+      )}
+
+      {/* Communications List */}
+      {!modal.loading && modal.communications.length === 0 && !modal.error ? (
+        <div className="text-center py-8 text-gray-500">
+          <DocumentTextIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+          <p className="text-lg font-medium">No communications found</p>
+          <p className="text-sm">Try adjusting your filters or generate some communications first.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {modal.communications.map((comm, index) => (
+            <div key={`${comm.generatedAt}-${index}`} className="bg-white border border-gray-200 rounded-lg p-4">
+              {/* Communication Header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-3">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    {getTypeLabel(comm.communicationType)}
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    {comm.tone}
+                  </span>
+                  {comm.characterLimit && (
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      comm.withinLimit ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {comm.characterCount}/{comm.characterLimit} chars
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-gray-500">
+                    {new Date(comm.generatedAt).toLocaleDateString()} at {new Date(comm.generatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </span>
+                  <button
+                    onClick={() => onCopy(comm.content)}
+                    className="inline-flex items-center px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+                  >
+                    <ShareIcon className="h-3 w-3 mr-1" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Instructions */}
+              {comm.customInstructions && (
+                <div className="mb-3 text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded">
+                  <strong>Custom Instructions:</strong> {comm.customInstructions}
+                </div>
+              )}
+
+              {/* Communication Content */}
+              <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                <pre className="whitespace-pre-wrap text-sm text-gray-900 font-mono leading-relaxed">
+                  {comm.content}
+                </pre>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!modal.loading && modal.totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-gray-200 pt-4">
+          <button
+            onClick={() => handlePageChange(modal.currentPage - 1)}
+            disabled={modal.currentPage <= 1}
+            className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-700">
+            Page {modal.currentPage} of {modal.totalPages}
+          </span>
+          <button
+            onClick={() => handlePageChange(modal.currentPage + 1)}
+            disabled={modal.currentPage >= modal.totalPages}
+            className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
         </div>
       )}
     </div>

@@ -1262,6 +1262,267 @@ app.get('/api/collaborate/:collaborationId/activity', async (req, res) => {
   }
 });
 
+// Generate communications for an event
+app.post('/api/events/:id/generate-communications', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const { communicationType, tone, customInstructions } = req.body;
+    
+    // Validate input
+    const validCommunicationTypes = [
+      'social-media-facebook',
+      'social-media-twitter', 
+      'social-media-linkedin',
+      'social-media-instagram',
+      'email-invitation',
+      'email-reminder',
+      'email-followup',
+      'press-release',
+      'announcement'
+    ];
+    
+    if (!communicationType || !validCommunicationTypes.includes(communicationType)) {
+      return res.status(400).json({ 
+        error: 'Invalid communication type',
+        validTypes: validCommunicationTypes
+      });
+    }
+
+    // Fetch the event
+    const event = await Event.findById(req.params.id);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    // Build communication generation prompt based on type
+    let prompt = '';
+    let characterLimit = '';
+    let formatInstructions = '';
+
+    switch (communicationType) {
+      case 'social-media-facebook':
+        characterLimit = '2200 characters';
+        formatInstructions = `Create an engaging Facebook post that can include multiple paragraphs, hashtags, and a call-to-action. Use an informative yet friendly tone suitable for Facebook's audience.`;
+        break;
+      case 'social-media-twitter':
+        characterLimit = '280 characters';
+        formatInstructions = `Create a concise Twitter/X post with relevant hashtags. Must be under 280 characters total. Be punchy and engaging.`;
+        break;
+      case 'social-media-linkedin':
+        characterLimit = '3000 characters';
+        formatInstructions = `Create a professional LinkedIn post suitable for academic and professional networks. Can include multiple paragraphs and professional hashtags.`;
+        break;
+      case 'social-media-instagram':
+        characterLimit = '2200 characters';
+        formatInstructions = `Create an Instagram post with engaging copy and relevant hashtags. Focus on visual appeal and community engagement.`;
+        break;
+      case 'email-invitation':
+        formatInstructions = `Create a complete email invitation including subject line and body. Use proper email formatting with clear sections for event details.`;
+        break;
+      case 'email-reminder':
+        formatInstructions = `Create a friendly reminder email with subject line and body. Include key event details and any last-minute information.`;
+        break;
+      case 'email-followup':
+        formatInstructions = `Create a thank-you/follow-up email with subject line and body. Thank attendees and provide any follow-up resources or information.`;
+        break;
+      case 'press-release':
+        formatInstructions = `Create a formal press release with headline, dateline, and structured content following AP style guidelines.`;
+        break;
+      case 'announcement':
+        formatInstructions = `Create a general announcement suitable for websites, newsletters, or bulletin boards.`;
+        break;
+    }
+
+    // Determine tone instructions
+    let toneInstructions = '';
+    switch (tone) {
+      case 'professional':
+        toneInstructions = 'Use a professional, formal tone appropriate for academic and business settings.';
+        break;
+      case 'friendly':
+        toneInstructions = 'Use a warm, friendly, and approachable tone that encourages participation.';
+        break;
+      case 'exciting':
+        toneInstructions = 'Use an enthusiastic, energetic tone that builds excitement and anticipation.';
+        break;
+      case 'informative':
+        toneInstructions = 'Use a clear, informative tone that focuses on providing essential details.';
+        break;
+      default:
+        toneInstructions = 'Use an appropriate tone for the communication type and audience.';
+    }
+
+    // Format event date for display
+    const eventDate = event.eventDate ? new Date(event.eventDate) : null;
+    const formattedDate = eventDate ? eventDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    }) : 'TBD';
+    
+    const formattedTime = eventDate ? eventDate.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }) : 'TBD';
+
+    prompt = `Generate ${communicationType.replace('-', ' ')} content for the following Vanderbilt University event:
+
+EVENT DETAILS:
+Title: ${event.title}
+Description: ${event.description || 'No description provided'}
+Date: ${formattedDate}
+Time: ${formattedTime}
+Location: ${event.location?.venue || 'Location TBD'}${event.location?.room ? ', ' + event.location.room : ''}
+Expected Attendance: ${event.expectedAttendance || 'TBD'}
+Event Type: ${event.eventType || 'General Event'}
+${event.hasAlcohol ? 'Note: This event will include alcohol service' : ''}
+
+CONTENT REQUIREMENTS:
+${formatInstructions}
+${characterLimit ? `Character limit: ${characterLimit}` : ''}
+${toneInstructions}
+
+${customInstructions ? `CUSTOM INSTRUCTIONS: ${customInstructions}` : ''}
+
+IMPORTANT GUIDELINES:
+- Include Vanderbilt University branding appropriately
+- Ensure all content follows university communication standards  
+- Include relevant contact information when appropriate
+- For social media: use relevant hashtags like #VanderbiltU, #VandyEvents
+- For emails: include proper formatting and contact details
+- Ensure accessibility and inclusivity in language
+- If event includes alcohol, mention responsible consumption when appropriate
+
+Please generate the complete ${communicationType.replace('-', ' ')} content now:`;
+
+    console.log('📝 Generating communications with prompt length:', prompt.length);
+    
+    // Generate content using Amplify
+    let generatedContent;
+    try {
+      generatedContent = await chatWithAmplify(prompt, []);
+    } catch (chatError) {
+      console.error('Communications generation failed:', chatError);
+      throw new Error('AI content generation failed');
+    }
+
+    // Structure the response
+    const response = {
+      communicationType,
+      tone: tone || 'default',
+      content: generatedContent,
+      characterCount: generatedContent.length,
+      generatedAt: new Date().toISOString(),
+      eventId: event._id,
+      eventTitle: event.title
+    };
+
+    // Add character limit warning if applicable
+    if (characterLimit && communicationType.startsWith('social-media')) {
+      const limit = parseInt(characterLimit.match(/\d+/)[0]);
+      response.characterLimit = limit;
+      response.withinLimit = generatedContent.length <= limit;
+      if (!response.withinLimit) {
+        response.warning = `Content exceeds ${characterLimit} limit by ${generatedContent.length - limit} characters`;
+      }
+    }
+
+    // Save the generated communication to the event
+    try {
+      const communicationRecord = {
+        communicationType,
+        tone: tone || 'default',
+        content: generatedContent,
+        characterCount: generatedContent.length,
+        characterLimit: response.characterLimit,
+        withinLimit: response.withinLimit,
+        customInstructions,
+        generatedAt: new Date(),
+        generatedBy: req.body.userId || null // Include user ID if provided
+      };
+
+      await Event.findByIdAndUpdate(
+        event._id,
+        { 
+          $push: { generatedCommunications: communicationRecord },
+          $set: { updatedAt: new Date() }
+        },
+        { new: true }
+      );
+
+      console.log('✅ Communications generated and saved successfully');
+    } catch (saveError) {
+      console.warn('⚠️ Failed to save communication to database:', saveError.message);
+      // Continue with response even if saving fails
+    }
+
+    res.json(response);
+    
+  } catch (error) {
+    console.error('❌ Generate communications error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate communications',
+      message: error.message 
+    });
+  }
+});
+
+// Get past communications for an event
+app.get('/api/events/:id/communications', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      return res.status(503).json({ error: 'Database not connected' });
+    }
+
+    const { page = 1, limit = 10, type, tone } = req.query;
+    
+    const event = await Event.findById(req.params.id).select('generatedCommunications title');
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    let communications = event.generatedCommunications || [];
+
+    // Apply filters
+    if (type && type !== 'all') {
+      communications = communications.filter(comm => comm.communicationType === type);
+    }
+    if (tone && tone !== 'all') {
+      communications = communications.filter(comm => comm.tone === tone);
+    }
+
+    // Sort by most recent first
+    communications.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
+
+    // Pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginatedCommunications = communications.slice(startIndex, endIndex);
+
+    const response = {
+      communications: paginatedCommunications,
+      totalCount: communications.length,
+      currentPage: parseInt(page),
+      totalPages: Math.ceil(communications.length / limit),
+      hasMore: endIndex < communications.length,
+      eventTitle: event.title
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('❌ Get past communications error:', error);
+    res.status(500).json({ 
+      error: 'Failed to retrieve past communications',
+      message: error.message 
+    });
+  }
+});
+
 // Add global error handlers
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);

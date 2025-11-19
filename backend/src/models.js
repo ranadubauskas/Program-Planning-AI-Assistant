@@ -211,6 +211,19 @@ const EventSchema = new mongoose.Schema({
     metadata: { type: mongoose.Schema.Types.Mixed } // Store additional action data
   }],
   
+  // Generated communications storage
+  generatedCommunications: [{
+    communicationType: { type: String, required: true },
+    tone: { type: String, required: true },
+    content: { type: String, required: true },
+    characterCount: { type: Number },
+    characterLimit: { type: Number },
+    withinLimit: { type: Boolean },
+    customInstructions: String,
+    generatedAt: { type: Date, default: Date.now },
+    generatedBy: { type: mongoose.Schema.Types.Mixed } // User who generated it
+  }],
+  
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
