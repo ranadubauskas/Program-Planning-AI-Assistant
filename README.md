@@ -8,16 +8,25 @@ Rana Dubauskas & Blanche Stora
 ## Staff Fellow
 EJ Edney
 
+## The Problem
+Program planning at Vanderbilt is fragmented, confusing, and time-consuming. Students and staff must navigate multiple policies, approval processes, timelines, and vendor requirements across different offices. Missing a single step—like submitting a space request, alcohol approval, or marketing timeline—can delay or jeopardize the entire event. There is currently no centralized, guided system to help planners understand what they need, when they need it, and how to stay compliant.
+
+The **Vanderbilt Program Planning Assistant** solves this problem by offering a unified, intelligent planning experience where users can receive personalized guidance, understand policies and requirements, track required tasks, and successfully navigate every step of the planning process.
+
 
 ## Features
 
 - **AI-Powered Chat Interface**: Get personalized guidance for program planning
 - **Interactive Checklists**: Track your progress with automatically generated task lists
+- **Generate Communications**: Generate custom communications & view them anytime to help with marketing the event 
 - **Email Notifications**: Stay on track with planning with email notification reminders
-- **Checklist Sharing**: Share plan with multiple people to collaborate  
+- **Checklist Sharing**: Share plan with multiple people to collaborate and view history of activity on event  
+- **Note-taking**: Save & update notes on event progress or updates 
 - **Policy Integration**: Access relevant policies with tiered warnings and citations
 - **Role-Based Guidance**: Different guidance for students vs. staff
 - **Data Persistence**: Save and continue your planning sessions
+- **Best Practices & Estimated Timeline**: View best practices, tips, and estimated timeline for your planning task
+- **Continue Chat to Update Plan**: Dynamically update checklist as requirements for event change
 
 ## Tech Stack
 
