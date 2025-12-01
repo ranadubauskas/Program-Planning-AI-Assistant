@@ -9,7 +9,7 @@ Rana Dubauskas & Blanche Stora
 EJ Edney
 
 ## The Problem
-Program planning at Vanderbilt is fragmented, confusing, and time-consuming. Students and staff must navigate multiple policies, approval processes, timelines, and vendor requirements across different offices. Missing a single step—like submitting a space request, alcohol approval, or marketing timeline—can delay or jeopardize the entire event. There is currently no centralized, guided system to help planners understand what they need, when they need it, and how to stay compliant.
+Program planning at Vanderbilt can be fragmented, confusing, and time-consuming. Students and staff must navigate multiple policies, approval processes, timelines, and vendor requirements across different offices. Missing a single step—like submitting a space request, alcohol approval, or marketing timeline—can delay or jeopardize the entire event. There is currently no centralized, guided system to help planners understand what they need, when they need it, and how to stay compliant.
 
 The **Vanderbilt Program Planning Assistant** solves this problem by offering a unified, intelligent planning experience where users can receive personalized guidance, understand policies and requirements, track required tasks, and successfully navigate every step of the planning process.
 
